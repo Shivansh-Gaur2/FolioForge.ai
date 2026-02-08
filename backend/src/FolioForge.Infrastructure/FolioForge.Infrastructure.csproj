@@ -5,6 +5,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="PdfPig" Version="0.1.13" />
     <PackageReference Include="RabbitMQ.Client" Version="7.2.0" />
   </ItemGroup>
   <ItemGroup>

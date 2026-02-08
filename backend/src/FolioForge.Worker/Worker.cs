@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using FolioForge.Application.Common.Events;
+using FolioForge.Application.Common.Interfaces;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -11,10 +12,14 @@ public class Worker : BackgroundService
     private readonly ILogger<Worker> _logger;
     private IConnection _connection;
     private IChannel _channel;
+    // My database is supposed to be scoped , so I need to create a scope to resolve it inside the worker
+    // Instead of injecting the IPdfService directly, I inject the IServiceScopeFactory to create a scope when processing each message
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public Worker(ILogger<Worker> logger)
+    public Worker(ILogger<Worker> logger, IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken)
@@ -68,8 +73,21 @@ public class Worker : BackgroundService
     private async Task ProcessResumeAsync(string filePath)
     {
         _logger.LogInformation($" ... Reading file from: {filePath}");
-        await Task.Delay(2000);
-        _logger.LogInformation(" ... AI Analysis Complete!");
+
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var pdfService = scope.ServiceProvider.GetRequiredService<IPdfService>();
+
+            try
+            {
+                var text = pdfService.ExtractText(filePath);
+                _logger.LogInformation($" ... Extracted Text: {text.Substring(0, Math.Min(100, text.Length))}...");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[SNAP] Error Extracting Text : {ex.Message}");
+            }
+        }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)

@@ -1,8 +1,10 @@
 ﻿using FolioForge.Application.Commands.CreatePortfolio;
+using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Interfaces;
 using FolioForge.Infrastructure.Messaging;
 using FolioForge.Infrastructure.Persistence;
 using FolioForge.Infrastructure.Repositories;
+using FolioForge.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +25,7 @@ namespace FolioForge.Infrastructure
 
             services.AddScoped<IPortfolioRepository, PortfolioRepository>();
             services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();
+            services.AddScoped<IPdfService, PdfService>();
             return services;
         }
         public static IServiceCollection AddApplication(this IServiceCollection services)
