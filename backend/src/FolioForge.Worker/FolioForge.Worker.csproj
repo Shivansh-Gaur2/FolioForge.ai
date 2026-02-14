@@ -14,7 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\FolioForge.Api\FolioForge.Api.csproj" />
     <ProjectReference Include="..\FolioForge.Application\FolioForge.Application.csproj" />
     <ProjectReference Include="..\FolioForge.Domain\FolioForge.Domain.csproj" />
+    <ProjectReference Include="..\FolioForge.Infrastructure\FolioForge.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
