@@ -9,7 +9,7 @@ namespace FolioForge.Domain.Entities
 {
     public class PortfolioSection : BaseEntity
     {
-        public Guid PortfolioId { get; private set; }
+        public Guid PortfolioId { get; set; } 
 
         // The section type that will be used to determine the section
         // For now i am assuming major sections like "Timeline, Grid, markdown, Hero"

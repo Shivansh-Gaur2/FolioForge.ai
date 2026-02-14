@@ -26,6 +26,7 @@ namespace FolioForge.Infrastructure
             services.AddScoped<IPortfolioRepository, PortfolioRepository>();
             services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();
             services.AddScoped<IPdfService, PdfService>();
+            services.AddHttpClient<IAiService, GroqAiService>(); 
             return services;
         }
         public static IServiceCollection AddApplication(this IServiceCollection services)
