@@ -9,10 +9,10 @@ namespace FolioForge.Domain.Common
     public class Result<T>
     {
         public bool IsSuccess { get; }
-        public T Value { get; }
-        public string Error { get; }
+        public T? Value { get; }
+        public string? Error { get; }
 
-        private Result(bool isSuccess, T value, string error)
+        private Result(bool isSuccess, T? value, string? error)
         {
             IsSuccess = isSuccess;
             Value = value;

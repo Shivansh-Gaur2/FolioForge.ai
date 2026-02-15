@@ -11,11 +11,11 @@ namespace FolioForge.Domain.Entities
         // private set because we don't want to allow external code to modify these properties directly,
         // we want to control how they are set through methods in the class.
 
-        // The slud is unique identifier for the portfolio, it will be used in the URL to access the portfolio, so it needs to be unique and not changeable after it's set.
-        public string Slug { get; private set; }
+        // The slug is unique identifier for the portfolio, it will be used in the URL to access the portfolio, so it needs to be unique and not changeable after it's set.
+        public string Slug { get; private set; } = default!;
 
         public Guid UserId { get; private set; }
-        public string Title { get; private set; }
+        public string Title { get; private set; } = default!;
         public bool IsPublished { get; private set; }
 
 
@@ -25,7 +25,7 @@ namespace FolioForge.Domain.Entities
         // i will use it more like a DTO because I will need something for the 
         // info to like theme to be set and send to the frontend 
         public record ThemeConfig(string Name, string PrimaryColor, string FontBody);
-        public ThemeConfig Theme { get; private set; }
+        public ThemeConfig Theme { get; private set; } = default!;
 
         private Portfolio() { }
 

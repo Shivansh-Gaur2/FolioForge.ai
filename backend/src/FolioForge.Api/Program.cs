@@ -5,6 +5,46 @@ using Microsoft.Extensions.Configuration;
 var builder = WebApplication.CreateBuilder(args);
 
 // ==================================================================
+// CORS CONFIGURATION
+// Trade-off: Development uses permissive origins for flexibility
+// Production should use explicit, restrictive origins
+// ==================================================================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReactApp",
+        policy =>
+        {
+            if (builder.Environment.IsDevelopment())
+            {
+                // Development: Allow common Vite ports
+                policy.WithOrigins(
+                        "http://localhost:5173",
+                        "http://localhost:5174",
+                        "http://localhost:5175",
+                        "http://127.0.0.1:5173",
+                        "http://127.0.0.1:5174"
+                    )
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials();
+            }
+            else
+            {
+                // Production: Explicit origin from configuration
+                var allowedOrigins = builder.Configuration
+                    .GetSection("Cors:AllowedOrigins")
+                    .Get<string[]>() ?? Array.Empty<string>();
+                
+                policy.WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials();
+            }
+        });
+});
+
+
+// ==================================================================
 // 1. DATABASE SETUP (Your MySQL Config)
 // ==================================================================
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -50,7 +90,7 @@ if (app.Environment.IsDevelopment())
         options.RoutePrefix = string.Empty;
     });
 }
-
+app.UseCors("AllowReactApp");
 app.UseHttpsRedirection();
 
 app.UseAuthorization();

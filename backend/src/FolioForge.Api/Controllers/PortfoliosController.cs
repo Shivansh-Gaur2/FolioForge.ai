@@ -1,6 +1,7 @@
 ﻿using FolioForge.Api.Contracts;
 using FolioForge.Application.Commands.CreatePortfolio;
 using FolioForge.Application.Common.Events;
+using FolioForge.Application.Portfolios.Queries;
 using FolioForge.Domain.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -37,6 +38,17 @@ namespace FolioForge.Api.Controllers
                 new { id = result.Value }
              );
 
+        }
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+        {
+            var query = new GetPortfolioByIdQuery(id);
+            var result = await _mediator.Send(query);
+
+            if (result == null) return NotFound();
+
+            return Ok(result); // Returns the actual JSON data!
         }
 
         [HttpGet("{slug}")]

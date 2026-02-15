@@ -18,10 +18,13 @@ namespace FolioForge.Infrastructure
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
-            // 1. Add this using
-            // 2. Change the logic
+            // Register DbContext
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(connectionString));
+
+            // Register IApplicationDbContext as the same instance as ApplicationDbContext
+            services.AddScoped<IApplicationDbContext>(provider => 
+                provider.GetRequiredService<ApplicationDbContext>());
 
             services.AddScoped<IPortfolioRepository, PortfolioRepository>();
             services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();

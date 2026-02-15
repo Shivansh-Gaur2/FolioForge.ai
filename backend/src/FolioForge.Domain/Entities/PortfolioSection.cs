@@ -13,13 +13,13 @@ namespace FolioForge.Domain.Entities
 
         // The section type that will be used to determine the section
         // For now i am assuming major sections like "Timeline, Grid, markdown, Hero"
-        public string SectionType { get; private set; }
+        public string SectionType { get; private set; } = default!;
         public int SortOrder { get; set; }
         public bool IsVisible { get; set; } = true;
 
         // Store JSON content as a string for SQL Server compatibility
         // This allows flexible schema-less data storage
-        public string Content { get; private set; }
+        public string Content { get; private set; } = default!;
 
         private PortfolioSection() { }
         public PortfolioSection(string sectionType, int order, string content)
