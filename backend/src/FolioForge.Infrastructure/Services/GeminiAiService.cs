@@ -85,19 +85,43 @@ public class GeminiAiService : IAiService
 
     private string BuildPrompt(string resumeText)
     {
-        // Kept the same prompt logic
         return $@"
-        You are a resume parser. Convert this resume text into valid JSON.
-        Resume Text:
-        {resumeText}
+        You are a professional resume parser. Analyze the text below and extract structured data.
+        
+        CRITICAL RULES:
+        1. For 'Experience' and 'Projects', do NOT write paragraphs.
+        2. Extract distinct achievements/responsibilities as a LIST of strings called 'points'.
+        3. If the resume has bullet points, preserve them. If it has paragraphs, split them into logical bullet points.
+        4. Keep descriptions professional, concise, and impact-oriented.
 
-        Output STRICT JSON with this schema:
+        REQUIRED JSON STRUCTURE:
         {{
-          ""summary"": ""string"",
-          ""skills"": [""string""],
-          ""experience"": [ {{ ""company"": ""string"", ""role"": ""string"", ""description"": ""string"" }} ],
-          ""projects"": [ {{ ""name"": ""string"", ""techStack"": ""string"", ""description"": ""string"" }} ]
+          ""summary"": ""Professional summary string"",
+          ""skills"": [""C#"", ""React"", ""Azure""],
+          ""experience"": [ 
+            {{ 
+              ""company"": ""Company Name"", 
+              ""role"": ""Job Title"", 
+              ""points"": [
+                ""Designed microservices architecture using .NET 8."",
+                ""Reduced API latency by 40% via Redis caching.""
+              ] 
+            }} 
+          ],
+          ""projects"": [ 
+            {{ 
+              ""name"": ""Project Name"", 
+              ""techStack"": ""React, Node.js"", 
+              ""points"": [
+                ""Built a real-time chat application using SignalR."",
+                ""Implemented OAuth2 authentication for secure login.""
+              ] 
+            }} 
+          ]
         }}
+
+        RESUME TEXT:
+        {resumeText}
         
         Do not include Markdown formatting (like ```json). Just the raw JSON string.";
     }

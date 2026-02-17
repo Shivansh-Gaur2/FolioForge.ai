@@ -1,4 +1,5 @@
 import { Card } from '../../components/ui/Card';
+import { SmartContent } from '../../components/ui/SmartContent';
 
 export const ProjectGrid = ({ content }) => {
     let projects = [];
@@ -8,7 +9,7 @@ export const ProjectGrid = ({ content }) => {
 
     return (
         <section className="mb-12">
-            <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center">
+            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center">
                 <span className="w-2 h-8 bg-purple-600 rounded-full mr-3"></span>
                 Featured Projects
             </h2>
@@ -19,7 +20,11 @@ export const ProjectGrid = ({ content }) => {
                         title={proj.Name} 
                         subtitle={proj.TechStack}
                     >
-                        {proj.Description}
+                        {/* Handles both new Points array and legacy Description string */}
+                        <SmartContent 
+                            content={proj.Points || proj.Description} 
+                            variant="diamond" 
+                        />
                     </Card>
                 ))}
             </div>

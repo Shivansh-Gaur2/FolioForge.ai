@@ -75,22 +75,47 @@ public class GroqAiService : IAiService
     private string BuildPrompt(string resumeText)
     {
         return $@"
-        Analyze this resume text and extract data into this exact JSON structure:
+        You are a professional resume parser. Analyze the text below and extract structured data.
+        
+        CRITICAL RULES:
+        1. For 'Experience' and 'Projects', do NOT write paragraphs.
+        2. Extract distinct achievements/responsibilities as a LIST of strings called 'points'.
+        3. If the resume has bullet points, preserve them. If it has paragraphs, split them into logical bullet points.
+        4. Keep descriptions professional, concise, and impact-oriented.
+
+        REQUIRED JSON STRUCTURE:
         {{
-          ""summary"": ""Professional summary"",
-          ""skills"": [""Skill1"", ""Skill2""],
-          ""experience"": [ {{ ""company"": ""Name"", ""role"": ""Title"", ""description"": ""Details"" }} ],
-          ""projects"": [ {{ ""name"": ""Title"", ""techStack"": ""Technologies"", ""description"": ""Details"" }} ]
+          ""summary"": ""Professional summary string"",
+          ""skills"": [""C#"", ""React"", ""Azure""],
+          ""experience"": [ 
+            {{ 
+              ""company"": ""Company Name"", 
+              ""role"": ""Job Title"", 
+              ""points"": [
+                ""Designed microservices architecture using .NET 8."",
+                ""Reduced API latency by 40% via Redis caching.""
+              ] 
+            }} 
+          ],
+          ""projects"": [ 
+            {{ 
+              ""name"": ""Project Name"", 
+              ""techStack"": ""React, Node.js"", 
+              ""points"": [
+                ""Built a real-time chat application using SignalR."",
+                ""Implemented OAuth2 authentication for secure login.""
+              ] 
+            }} 
+          ]
         }}
 
-        Resume Text:
+        RESUME TEXT:
         {resumeText}
         ";
     }
 
     private string CleanJson(string json)
     {
-        // Llama 3 sometimes adds "Here is the JSON:" preamble. We remove it.
         var start = json.IndexOf("{");
         var end = json.LastIndexOf("}");
         if (start >= 0 && end > start)

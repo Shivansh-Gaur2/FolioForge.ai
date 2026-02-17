@@ -5,6 +5,7 @@
 > Transform static PDF resumes into dynamic, deployable personal websites in seconds using AI-powered parsing and a flexible widget system.
 
 [![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -25,55 +26,73 @@
 
 ## 🏗️ Architecture & Design Philosophy
 
-Built on **Clean Architecture** principles with a **CQRS-inspired** flow to separate write (ingestion) from read (rendering) operations.
+Built on **Clean Architecture** principles with a **CQRS-inspired** flow using MediatR to separate write (commands) from read (queries) operations.
 
-### Core Components
+### System Architecture
 
 ```mermaid
-graph LR
-    A[PDF Upload] --> B[Ingestion Engine]
-    B --> C[AI Processing]
-    C --> D[Widget Storage]
-    D --> E[Rendering Engine]
-    E --> F[Public Portfolio]
+graph TB
+    subgraph "Frontend - React + Vite"
+        A[React SPA] --> B[API Client]
+        B --> C[Portfolio Service]
+    end
+    
+    subgraph "Backend API - .NET 9"
+        D[PortfoliosController] --> E[MediatR]
+        E --> F[Commands/Queries]
+        F --> G[Repositories]
+    end
+    
+    subgraph "Message Queue"
+        H[RabbitMQ]
+    end
+    
+    subgraph "Background Worker"
+        I[Worker Service] --> J[PDF Extraction]
+        J --> K[AI Processing]
+        K --> L[Section Generation]
+    end
+    
+    subgraph "AI Services"
+        M[Groq AI / OpenAI / Gemini]
+    end
+    
+    subgraph "Database"
+        N[(SQL Server)]
+    end
+    
+    C --> D
+    D --> H
+    H --> I
+    K --> M
+    G --> N
+    L --> N
 ```
 
-#### 1. **Ingestion Engine (Write Path)**
-- PDF upload handling and validation
-- Async AI processing with OpenAI GPT
-- Structured data extraction into widgets
+### Event-Driven Resume Processing Flow
 
-#### 2. **Rendering Engine (Read Path)**
-- High-performance React SPA
-- Generic widget rendering system
-- Theme-aware component library
-
-#### 3. **Routing Layer**
-- Dynamic subdomain routing (`username.folioforge.ai`)
-- Client-side routing with React Router
-- Nginx reverse proxy configuration
-
-### Key Engineering Decisions
-
-#### **Generic Widget Protocol**
-We don't store "resumes"—we store **Widgets** (Timeline, Grid, Markdown, etc.). This adheres to the **Open/Closed Principle**: adding new widget types (e.g., Spotify Now Playing) requires zero database migrations.
-
-```csharp
-// Example: Extensible widget system
-public class PortfolioSection : BaseEntity
-{
-    public string Type { get; set; }        // "timeline", "grid", "markdown"
-    public JsonDocument Data { get; set; }  // Flexible JSON storage
-}
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant RabbitMQ
+    participant Worker
+    participant AI
+    participant DB
+    
+    User->>API: POST /portfolios/{id}/upload-resume
+    API->>API: Save PDF to disk
+    API->>RabbitMQ: Publish ResumeUploadedEvent
+    API-->>User: 202 Accepted
+    
+    RabbitMQ->>Worker: Consume message
+    Worker->>Worker: Extract PDF text (PdfPig)
+    Worker->>AI: Generate portfolio data
+    AI-->>Worker: Structured JSON
+    Worker->>DB: Delete old sections
+    Worker->>DB: Insert new sections
+    Worker->>Worker: Log success
 ```
-
-#### **Async Processing**
-Heavy AI processing happens in the background using message queues (planned: RabbitMQ/Azure Service Bus). APIs return `202 Accepted` immediately for responsive UX.
-
-#### **Hybrid Storage Strategy**
-- **MySQL** for relational data (users, portfolios)
-- **JSON columns** for polymorphic widget content
-- Combines ACID compliance with NoSQL flexibility
 
 ---
 
@@ -83,111 +102,33 @@ Heavy AI processing happens in the background using message queues (planned: Rab
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Framework** | .NET 9 | Modern web API with minimal APIs |
-| **Architecture** | Clean Architecture | Separation of concerns, testability |
-| **Database** | SQL Server | Relational data with JSON support |
-| **ORM** | Entity Framework Core | Type-safe database access |
-| **Validation** | FluentValidation (planned) | Request validation |
-| **AI/LLM** | OpenAI API (planned) | Resume parsing & content generation |
-| **Messaging** | RabbitMQ (planned) | Async job processing |
+| **Framework** | .NET 9 | Modern web API with Controllers |
+| **Architecture** | Clean Architecture + CQRS | Separation of concerns, testability |
+| **Database** | SQL Server | Relational data with JSON column support |
+| **ORM** | Entity Framework Core 9 | Type-safe database access |
+| **Messaging** | RabbitMQ | Async job processing |
+| **PDF Parsing** | PdfPig | Extract text from resume PDFs |
+| **AI/LLM** | Groq (Llama 3.3), OpenAI, Gemini | Resume parsing & content generation |
+| **CQRS** | MediatR | Command/Query separation |
 
-### Frontend (Planned)
+### Frontend
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Framework** | React 19 + Vite | Modern SPA development |
-| **Styling** | Tailwind CSS | Utility-first CSS framework |
-| **Components** | Radix UI | Accessible headless components |
-| **State Management** | Zustand + TanStack Query | Client/server state |
-| **Animations** | Framer Motion | Smooth transitions |
+| **Framework** | React 19 + Vite | Modern SPA with HMR |
+| **Styling** | Tailwind CSS 4 | Utility-first CSS framework |
+| **Animations** | Framer Motion | Stunning transitions & animations |
+| **HTTP Client** | Axios | API communication |
+| **State** | React Hooks | Local component state |
+| **Theming** | Context API | Dark/Light mode support |
 
-### DevOps & Infrastructure
+### Infrastructure
 
-- **Containerization:** Docker & Docker Compose
-- **Reverse Proxy:** Nginx (local) / Cloudflare (prod)
-- **CI/CD:** GitHub Actions (planned)
-- **Hosting:** Azure App Service / AWS ECS (planned)
-
----
-
-## ⚡ Features
-
-### Current
-- ✅ Clean Architecture implementation
-- ✅ Domain-driven design with entities
-- ✅ MySQL database with JSON column support
-- ✅ Entity Framework Core with migrations
-- ✅ Portfolio and section management
-
-### Planned
-- 🔜 **AI-Powered PDF Parsing** - Convert resumes to structured JSON
-- 🔜 **Multi-Tenancy** - Subdomain routing (`username.folioforge.ai`)
-- 🔜 **Drag-and-Drop Builder** - Reorder sections with ease
-- 🔜 **Theming Engine** - Customizable design tokens
-- 🔜 **Authentication** - User accounts and authorization
-- 🔜 **Public API** - REST endpoints for portfolio CRUD
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [.NET 9 SDK](https://dotnet.microsoft.com/download)
-- [MySQL 8.0+](https://dev.mysql.com/downloads/) or [Docker](https://www.docker.com/)
-- IDE: [Visual Studio 2022](https://visualstudio.microsoft.com/) or [VS Code](https://code.visualstudio.com/)
-
-### Quick Start
-
-#### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/FolioForge.ai.git
-cd FolioForge.ai
-```
-
-#### 2. Database Setup
-
-**Option A: Using Docker**
-```bash
-docker run --name folioforge-sqlserver \
-  -e "ACCEPT_EULA=Y" \
-  -e "MSSQL_SA_PASSWORD=YourStrong@Password123" \
-  -p 1433:1433 \
-  -d mcr.microsoft.com/mssql/server:2022-latest
-```
-
-**Option B: Local SQL Server**
-```sql
-CREATE DATABASE folioforge_db;
-```
-
-#### 3. Configure Connection String
-
-Update [appsettings.json](backend/src/FolioForge.Api/appsettings.json):
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=folioforge_db;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;"
-  }
-}
-```
-
-#### 4. Run Migrations
-
-```bash
-cd backend/src/FolioForge.Api
-dotnet ef database update
-```
-
-#### 5. Run the Application
-
-```bash
-dotnet run
-```
-
-API will be available at: `https://localhost:7xxx`
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Message Broker** | RabbitMQ | Event-driven processing |
+| **Background Jobs** | .NET Worker Service | Long-running message consumer |
+| **API Docs** | Swagger/OpenAPI | Interactive API documentation |
 
 ---
 
@@ -198,293 +139,301 @@ FolioForge.ai/
 ├── backend/
 │   ├── FolioForge.sln                    # Solution file
 │   └── src/
-│       ├── FolioForge.Api/               # 🌐 API Layer
-│       │   ├── Program.cs                # Entry point, middleware
-│       │   ├── appsettings.json          # Configuration
-│       │   └── Properties/
-│       │       └── launchSettings.json   # Dev settings
-│       │
-│       ├── FolioForge.Application/       # 📋 Application Layer
-│       │   └── (Use Cases, Services)     # Business logic orchestration
-│       │
-│       ├── FolioForge.Domain/            # 💎 Domain Layer
-│       │   ├── Entities/                 # Core business entities
-│       │   │   ├── BaseEntity.cs         # Base entity with audit fields
-│       │   │   ├── Portfolio.cs          # Portfolio aggregate root
-│       │   │   └── PortfolioSection.cs   # Widget sections
-│       │   └── Interfaces/               # Repository contracts
-│       │       └── IPortfolioRepository.cs
-│       │
-│       └── FolioForge.Infrastructure/    # 🔧 Infrastructure Layer
-│           ├── Persistence/              # Database context
-│           │   └── ApplicationDbContext.cs
-│           ├── Repositories/             # Repository implementations
-│           │   └── PortfolioRepository.cs
-│           └── DependencyInjection.cs    # Service registration
+│       ├── FolioForge.Api/               # 🌐 API Layer (Controllers, DI)
+│       ├── FolioForge.Application/       # 📋 Application Layer (CQRS, DTOs)
+│       ├── FolioForge.Domain/            # 💎 Domain Layer (Entities, Interfaces)
+│       ├── FolioForge.Infrastructure/    # 🔧 Infrastructure (EF Core, Services)
+│       └── FolioForge.Worker/            # ⚙️ Background Worker (RabbitMQ Consumer)
 │
-├── LICENSE
-└── README.md
+└── folioforge.client/                    # ⚛️ React Frontend
+    └── src/
+        ├── api/                          # API client & error handling
+        ├── components/                   # Reusable UI components
+        ├── features/                     # Feature-specific components
+        ├── hooks/                        # Custom React hooks
+        ├── pages/                        # Page components
+        └── services/                     # API service layer
 ```
 
-### Architecture Layers
-
-| Layer | Responsibility | Dependencies |
-|-------|---------------|--------------|
-| **Domain** | Business entities & rules | None (pure) |
-| **Application** | Use cases, business logic | Domain |
-| **Infrastructure** | External concerns (DB, APIs) | Application, Domain |
-| **API** | HTTP endpoints, controllers | All layers |
+> 📚 **Each layer has its own README** with detailed documentation. See the respective folders.
 
 ---
 
-## � Domain Models
+## ⚡ Features
 
-### Core Entities
+### ✅ Implemented
 
-#### **Portfolio**
-The aggregate root representing a user's portfolio.
+| Feature | Description |
+|---------|-------------|
+| **Clean Architecture** | 4-layer separation (API, Application, Domain, Infrastructure) |
+| **CQRS with MediatR** | Command/Query separation for portfolio operations |
+| **Event-Driven Processing** | RabbitMQ-based async resume processing |
+| **AI-Powered Parsing** | Groq (Llama 3.3), OpenAI, Gemini integration |
+| **PDF Text Extraction** | PdfPig-based resume text extraction |
+| **Generic Widget System** | Flexible JSON-based section storage |
+| **Smart Bullet Points** | AI extracts achievements as structured arrays |
+| **React Portfolio Viewer** | Animated, responsive portfolio display |
+| **Dark/Light Theme** | System-aware theme switching |
+| **Particle Hero Animation** | Interactive particle background |
+| **Animated Sections** | Framer Motion-powered scroll animations |
 
-```csharp
-public class Portfolio : BaseEntity
-{
-    public string Slug { get; private set; }              // Unique URL identifier
-    public Guid UserId { get; private set; }              // Owner reference
-    public string Title { get; private set; }             // Portfolio title
-    public bool IsPublished { get; private set; }         // Visibility flag
-    public List<PortfolioSection> Sections { get; }       // Widget sections
-    public ThemeConfig Theme { get; private set; }        // Design configuration
-}
-```
+### 🔜 Planned
 
-#### **PortfolioSection**
-Flexible widget container supporting multiple content types.
-
-```csharp
-public class PortfolioSection : BaseEntity
-{
-    public Guid PortfolioId { get; private set; }         // Parent portfolio
-    public string SectionType { get; private set; }       // Widget type (timeline, grid, hero, markdown)
-    public int SortOrder { get; set; }                    // Display order
-    public bool IsVisible { get; set; }                   // Visibility flag
-    public string Content { get; private set; }           // JSON content as string
-}
-```
-
----
-
-## 🔧 API Endpoints (Planned)
-
-### Portfolios
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/portfolios` | List user's portfolios |
-| `GET` | `/api/portfolios/{slug}` | Get portfolio by slug |
-| `POST` | `/api/portfolios` | Create new portfolio |
-| `PUT` | `/api/portfolios/{id}` | Update portfolio |
-| `DELETE` | `/api/portfolios/{id}` | Delete portfolio |
-| `PATCH` | `/api/portfolios/{id}/theme` | Update theme |
-| `POST` | `/api/portfolios/{id}/sections` | Add section |
-
-### Public API
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/{slug}` | Public portfolio view |
-
----
-
-## 🧪 Development Roadmap
-
-### ✅ Phase 1: Foundation (Current)
-- [x] Clean Architecture setup
-- [x] Domain models (Portfolio, PortfolioSection)
-- [x] Entity Framework Core integration
-- [x] MySQL database with JSON support
-- [x] Repository pattern interfaces
-
-### 🚧 Phase 2: Core API (In Progress)
-- [ ] User authentication & authorization (JWT)
-- [ ] Portfolio CRUD endpoints
-- [ ] Section management endpoints
-- [ ] Theme customization API
-- [ ] Input validation with FluentValidation
-- [ ] Unit tests & integration tests
-
-### 📋 Phase 3: AI Integration
-- [ ] PDF upload endpoint with validation
-- [ ] OpenAI GPT-4 integration
-- [ ] Resume parsing to structured widgets
-- [ ] Background job processing with RabbitMQ
-- [ ] Async processing with 202 Accepted pattern
-
-### 🎨 Phase 4: Frontend Dashboard
-- [ ] React + Vite setup
-- [ ] User authentication flow
-- [ ] Portfolio management dashboard
-- [ ] Drag-and-drop widget editor (dnd-kit)
-- [ ] Theme selector UI
-- [ ] Real-time preview
-
-### 🌐 Phase 5: Public Rendering
-- [ ] Public portfolio viewer
-- [ ] Generic widget rendering system
-- [ ] SEO optimization
-- [ ] Social media meta tags
-- [ ] Custom 404 pages
-
-### 🚀 Phase 6: Multi-Tenancy & Scaling
-- [ ] Subdomain routing (`username.folioforge.ai`)
+- [ ] User authentication (JWT)
+- [ ] Multi-tenancy with subdomain routing
+- [ ] Drag-and-drop section editor
 - [ ] Custom domain support
-- [ ] CDN integration for static assets
-- [ ] Database sharding strategy
-- [ ] Caching layer (Redis)
-- [ ] Rate limiting & throttling
+- [ ] PDF resume download
+- [ ] Analytics dashboard
 
 ---
 
-## 🧪 Testing
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [.NET 9 SDK](https://dotnet.microsoft.com/download)
+- [Node.js 20+](https://nodejs.org/)
+- [SQL Server](https://www.microsoft.com/sql-server) or [Docker](https://www.docker.com/)
+- [RabbitMQ](https://www.rabbitmq.com/) (or Docker)
+
+### Quick Start
+
+#### 1. Clone the Repository
 
 ```bash
-# Run unit tests
-dotnet test
-
-# Run with coverage
-dotnet test /p:CollectCoverage=true
-
-# Run specific test project
-dotnet test backend/tests/FolioForge.Domain.Tests
+git clone https://github.com/yourusername/FolioForge.ai.git
+cd FolioForge.ai
 ```
 
----
-
-## 🐳 Docker Support (Planned)
-
-```yaml
-# docker-compose.yml
-services:
-  api:
-    build: ./backend
-    ports:
-      - "5000:80"
-    depends_on:
-      - db
-    environment:
-      - ConnectionStrings__DefaultConnection=Server=db;Database=folioforge_db;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;
-  
-  db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    environment:
-      - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=YourStrong@Password123
-    ports:
-      - "1433:1433"
-```
+#### 2. Start Infrastructure (Docker)
 
 ```bash
-# Build and run all services
-docker-compose up
+# Start SQL Server
+docker run --name folioforge-sql \
+  -e "ACCEPT_EULA=Y" \
+  -e "MSSQL_SA_PASSWORD=YourStrong@Password123" \
+  -p 1433:1433 \
+  -d mcr.microsoft.com/mssql/server:2022-latest
 
-# Run in detached mode
-docker-compose up -d
+# Start RabbitMQ
+docker run --name folioforge-rabbit \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -d rabbitmq:3-management
+```
 
-# View logs
-docker-compose logs -f api
+#### 3. Configure Backend
+
+Update `backend/src/FolioForge.Api/appsettings.json`:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Database=folioforge_db;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;"
+  },
+  "Groq": {
+    "ApiKey": "your-groq-api-key"
+  }
+}
+```
+
+#### 4. Run Database Migrations
+
+```bash
+cd backend/src/FolioForge.Api
+dotnet ef database update
+```
+
+#### 5. Start Backend Services
+
+```bash
+# Terminal 1: Start API
+cd backend/src/FolioForge.Api
+dotnet run
+
+# Terminal 2: Start Worker
+cd backend/src/FolioForge.Worker
+dotnet run
+```
+
+#### 6. Start Frontend
+
+```bash
+cd folioforge.client
+npm install
+npm run dev
+```
+
+#### 7. Access the Application
+
+- **Frontend:** http://localhost:5173
+- **API Swagger:** http://localhost:5000
+- **RabbitMQ Dashboard:** http://localhost:15672 (guest/guest)
+
+---
+
+## 🔄 API Endpoints
+
+### Portfolio Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/portfolios` | Create new portfolio |
+| `GET` | `/api/portfolios/{id}` | Get portfolio by ID (with sections) |
+| `GET` | `/api/portfolios/{slug}` | Get portfolio by slug |
+| `POST` | `/api/portfolios/{id}/upload-resume` | Upload PDF resume for AI processing |
+
+### Request/Response Examples
+
+**Create Portfolio:**
+```bash
+curl -X POST http://localhost:5000/api/portfolios \
+  -H "Content-Type: application/json" \
+  -d '{"title": "John Doe Portfolio", "slug": "john-doe"}'
+```
+
+**Upload Resume:**
+```bash
+curl -X POST http://localhost:5000/api/portfolios/{id}/upload-resume \
+  -F "file=@resume.pdf"
 ```
 
 ---
 
-## 🤝 Contributing
+## 🧪 Architecture Deep Dive
 
-Contributions are welcome! Please follow these guidelines:
+### Layer Dependencies
 
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-4. **Push** to the branch (`git push origin feature/amazing-feature`)
-5. **Open** a Pull Request
+```
+┌─────────────────────────────────────────────────────┐
+│                    API Layer                         │
+│         (Controllers, Middleware, DI Setup)          │
+└─────────────────────┬───────────────────────────────┘
+                      │ depends on
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│               Application Layer                      │
+│    (Commands, Queries, Handlers, DTOs, Interfaces)   │
+└─────────────────────┬───────────────────────────────┘
+                      │ depends on
+                      ▼
+┌─────────────────────────────────────────────────────┐
+│                  Domain Layer                        │
+│      (Entities, Value Objects, Domain Events)        │
+└─────────────────────────────────────────────────────┘
+                      ▲
+                      │ implements interfaces from
+┌─────────────────────┴───────────────────────────────┐
+│              Infrastructure Layer                    │
+│  (EF Core, Repositories, AI Services, RabbitMQ)      │
+└─────────────────────────────────────────────────────┘
+```
 
-### Coding Standards
-- Follow C# naming conventions (PascalCase for public, camelCase for private)
-- Write XML documentation for public APIs
-- Write unit tests for new features
-- Update documentation as needed
-- Keep commits atomic and descriptive
-- Follow [Conventional Commits](https://www.conventionalcommits.org/) format
+### Key Design Patterns
 
----
-
-## 📈 Performance Considerations
-
-- **Database Indexing:** Unique indexes on `Portfolio.Slug` for O(1) lookups
-- **JSON Columns:** Flexible schema without migration overhead
-- **Async Processing:** Non-blocking AI operations with message queues
-- **Connection Pooling:** Efficient database connection management (enabled by default)
-- **Query Optimization:** EF Core tracking disabled for read-only queries
-- **Caching Strategy:** Redis for frequently accessed portfolios (planned)
-
----
-
-## 🔒 Security Best Practices (Planned)
-
-- [ ] JWT-based authentication with refresh tokens
-- [ ] Role-based authorization (RBAC) - Admin, User roles
-- [ ] Input sanitization & validation (FluentValidation)
-- [ ] SQL injection prevention (parameterized queries via EF Core)
-- [ ] XSS protection (Content Security Policy headers)
-- [ ] CSRF tokens for state-changing operations
-- [ ] Rate limiting on public endpoints (ASP.NET Core Rate Limiting)
-- [ ] Secure password hashing (ASP.NET Identity with Argon2)
-- [ ] HTTPS enforcement in production
-- [ ] API key authentication for public API
+| Pattern | Usage |
+|---------|-------|
+| **Repository Pattern** | Abstract data access behind interfaces |
+| **CQRS** | Separate read (queries) from write (commands) |
+| **Mediator Pattern** | Decouple request handling via MediatR |
+| **Factory Pattern** | Create PortfolioSection with `Create()` |
+| **Result Pattern** | Type-safe success/failure handling |
+| **Event-Driven** | Async processing via RabbitMQ |
 
 ---
 
 ## 📊 Database Schema
 
 ```sql
--- Portfolios Table (SQL Server)
-CREATE TABLE portfolios (
+-- Portfolios Table
+CREATE TABLE Portfolios (
     Id UNIQUEIDENTIFIER PRIMARY KEY,
     UserId UNIQUEIDENTIFIER NOT NULL,
     Slug NVARCHAR(50) NOT NULL UNIQUE,
     Title NVARCHAR(100) NOT NULL,
     IsPublished BIT NOT NULL DEFAULT 1,
-    Theme NVARCHAR(MAX) NOT NULL,              -- JSON stored as string
+    Theme NVARCHAR(MAX) NOT NULL,  -- JSON as string
     CreatedAt DATETIME2 NOT NULL,
     UpdatedAt DATETIME2 NOT NULL
 );
 
-CREATE UNIQUE INDEX IX_portfolios_Slug ON portfolios(Slug);
-
--- Portfolio Sections Table
-CREATE TABLE portfolio_sections (
+-- Portfolio Sections Table (Generic Widget Storage)
+CREATE TABLE Sections (
     Id UNIQUEIDENTIFIER PRIMARY KEY,
-    PortfolioId UNIQUEIDENTIFIER NOT NULL,
-    SectionType NVARCHAR(50) NOT NULL,
+    PortfolioId UNIQUEIDENTIFIER NOT NULL REFERENCES Portfolios(Id),
+    SectionType NVARCHAR(50) NOT NULL,  -- 'About', 'Skills', 'Timeline', 'Projects'
     SortOrder INT NOT NULL DEFAULT 0,
     IsVisible BIT NOT NULL DEFAULT 1,
-    Content NVARCHAR(MAX) NOT NULL,            -- JSON stored as string
+    Content NVARCHAR(MAX) NOT NULL,  -- JSON content
     CreatedAt DATETIME2 NOT NULL,
-    UpdatedAt DATETIME2 NOT NULL,
-    CONSTRAINT FK_portfolio_sections_portfolios 
-        FOREIGN KEY (PortfolioId) REFERENCES portfolios(Id) ON DELETE CASCADE
+    UpdatedAt DATETIME2 NOT NULL
 );
+```
 
-CREATE INDEX IX_portfolio_sections_PortfolioId ON portfolio_sections(PortfolioId);
-CREATE INDEX IX_portfolio_sections_SectionType ON portfolio_sections(SectionType);
+### JSON Content Examples
+
+**Skills Section:**
+```json
+{
+  "items": ["C#", ".NET", "React", "TypeScript", "Azure", "Docker"]
+}
+```
+
+**Experience Section (with Smart Bullet Points):**
+```json
+{
+  "items": [
+    {
+      "Company": "Tech Corp",
+      "Role": "Senior Engineer",
+      "Points": [
+        "Led microservices migration reducing latency by 40%",
+        "Mentored team of 5 junior developers",
+        "Implemented CI/CD pipeline with Azure DevOps"
+      ]
+    }
+  ]
+}
+```
+
+**Projects Section (with Smart Bullet Points):**
+```json
+{
+  "items": [
+    {
+      "Name": "FolioForge.ai",
+      "TechStack": "React, .NET 9, RabbitMQ",
+      "Points": [
+        "Built AI-powered resume parsing with 95% accuracy",
+        "Implemented event-driven architecture for scalability",
+        "Designed responsive portfolio viewer with animations"
+      ]
+    }
+  ]
+}
 ```
 
 ---
 
-## 🤝 Contribution Guidelines
+## 🤝 Contributing
 
-1. **Branching:** Use `feature/`, `bugfix/`, or `hotfix/` prefixes
-2. **Commits:** Follow Conventional Commits (e.g., `feat: add spotify widget`, `fix: resolve null reference`)
-3. **Code Style:**
-   - **C#:** Follows standard .NET conventions (`.editorconfig` included)
-   - **React:** ESLint + Prettier enabled (planned)
-4. **Pull Requests:** Include description, screenshots (if UI changes), and link to related issues
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'feat: add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Commit Convention
+
+We follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+- `feat:` New feature
+- `fix:` Bug fix
+- `docs:` Documentation changes
+- `refactor:` Code refactoring
+- `test:` Adding tests
+- `chore:` Maintenance tasks
 
 ---
 
@@ -501,61 +450,12 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ---
 
-## 🙏 Acknowledgments
-
-- **Clean Architecture** by Robert C. Martin (Uncle Bob)
-- **Domain-Driven Design** concepts by Eric Evans
-- **Notion's block-based architecture** for widget system inspiration
-- **Microsoft's eShopOnWeb** for Clean Architecture reference implementation
-- **Jason Taylor's Clean Architecture Template** for project structure guidance
-
----
-
-## 📚 Additional Resources
-
-- [Clean Architecture in ASP.NET Core](https://docs.microsoft.com/aspnet/core/fundamentals/)
-- [Entity Framework Core Documentation](https://docs.microsoft.com/ef/core/)
-- [SQL Server JSON Functions](https://learn.microsoft.com/sql/relational-databases/json/json-data-sql-server)
-- [.NET 9 Release Notes](https://learn.microsoft.com/dotnet/core/whats-new/dotnet-9)
-- [CQRS Pattern](https://martinfowler.com/bliki/CQRS.html)
-- [Repository Pattern](https://docs.microsoft.com/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
-
----
-
-## 🐛 Known Issues
-
-- [ ] Weather forecast endpoint in Program.cs is boilerplate (will be removed)
-
----
-
-## 📝 Changelog
-
-### [Unreleased]
-#### Added
-- Clean Architecture project structure
-- Domain entities (Portfolio, PortfolioSection, BaseEntity)
-- Entity Framework Core with SQL Server provider
-- Repository pattern implementation
-- Database context with JSON column support (stored as NVARCHAR(MAX))
-- RabbitMQ event publisher for async processing
-- Background worker service for message consumption
-- Portfolio creation API endpoint with file upload support
-
-#### Changed
-- Updated to .NET 9
-- Using SQL Server instead of MySQL for better JSON handling
-
-#### Fixed
-- N/A
-
----
-
 <div align="center">
 
 **⭐ If you find this project interesting, please give it a star! ⭐**
 
 Made with 💙 and ☕ by developers, for developers
 
-[Report Bug](https://github.com/yourusername/FolioForge.ai/issues) • [Request Feature](https://github.com/yourusername/FolioForge.ai/issues) • [Documentation](#)
+[Report Bug](https://github.com/yourusername/FolioForge.ai/issues) • [Request Feature](https://github.com/yourusername/FolioForge.ai/issues)
 
 </div>

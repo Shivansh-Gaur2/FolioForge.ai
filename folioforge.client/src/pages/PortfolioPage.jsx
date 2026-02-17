@@ -1,59 +1,95 @@
+import { motion } from 'framer-motion';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { AsyncStateHandler } from '../components/AsyncStateHandler';
-import { SkillsSection } from '../features/portfolio/SkillsSection';
-import { TimelineSection } from '../features/portfolio/TimelineSection';
-import { ProjectGrid } from '../features/portfolio/ProjectGrid';
-
-/**
- * PortfolioHeader Component
- * Extracted for readability and potential reuse
- */
-const PortfolioHeader = ({ title, aboutContent }) => {
-    let bio = "";
-    try { bio = JSON.parse(aboutContent).content; } catch {}
-
-    return (
-        <header className="text-center py-20 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100">
-            <div className="max-w-4xl mx-auto px-6">
-                <h1 className="text-5xl font-extrabold text-slate-900 tracking-tight mb-6">{title}</h1>
-                <p className="text-xl text-slate-600 leading-relaxed max-w-2xl mx-auto">
-                    {bio}
-                </p>
-                <div className="mt-8 flex justify-center gap-4">
-                    <button className="px-6 py-3 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 transition">Contact Me</button>
-                    <button className="px-6 py-3 bg-white text-slate-900 border border-slate-300 font-medium rounded-lg hover:bg-slate-50 transition">Download CV</button>
-                </div>
-            </div>
-        </header>
-    );
-};
+import { FloatingNav } from '../components/layout/FloatingNav';
+import { ParticleHero } from '../features/portfolio/ParticleHero';
+import { AnimatedSkillsSection } from '../features/portfolio/AnimatedSkillsSection';
+import { AnimatedTimelineSection } from '../features/portfolio/AnimatedTimelineSection';
+import { AnimatedProjectsSection } from '../features/portfolio/AnimatedProjectsSection';
+import { ContactSection } from '../features/portfolio/ContactSection';
 
 /**
  * PortfolioContent Component
- * Renders the main portfolio content
+ * Renders the stunning portfolio with full animations
  */
 const PortfolioContent = ({ portfolio }) => {
     // Helper to find sections safely
     const getSection = (type) => 
         portfolio.sections?.find(s => s.sectionType?.toLowerCase() === type.toLowerCase());
 
-    return (
-        <div className="min-h-screen bg-white font-sans text-slate-900">
-            <PortfolioHeader 
-                title={portfolio.title} 
-                aboutContent={getSection('About')?.content} 
-            />
-            
-            <main className="max-w-5xl mx-auto px-6 py-16">
-                {getSection('Skills') && <SkillsSection content={getSection('Skills').content} />}
-                {getSection('Timeline') && <TimelineSection content={getSection('Timeline').content} />}
-                {getSection('Projects') && <ProjectGrid content={getSection('Projects').content} />}
-            </main>
+    // Parse bio from About section
+    let bio = "";
+    try { 
+        const aboutContent = getSection('About')?.content;
+        if (aboutContent) bio = JSON.parse(aboutContent).content; 
+    } catch {}
 
-            <footer className="text-center py-10 text-slate-400 text-sm border-t border-slate-100">
-                &copy; {new Date().getFullYear()} {portfolio.title}. Powered by FolioForge AI.
+    const scrollToContact = () => {
+        document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    return (
+        <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="min-h-screen bg-white dark:bg-slate-950 
+                      font-sans text-slate-900 dark:text-white
+                      transition-colors duration-300"
+        >
+            {/* Floating Navigation */}
+            <FloatingNav />
+
+            {/* Hero Section with Particles */}
+            <div id="hero">
+                <ParticleHero 
+                    title={portfolio.title}
+                    bio={bio}
+                    onContactClick={scrollToContact}
+                    onDownloadClick={() => alert('CV download coming soon!')}
+                />
+            </div>
+            
+            {/* Skills Section */}
+            {getSection('Skills') && (
+                <AnimatedSkillsSection content={getSection('Skills').content} />
+            )}
+
+            {/* Experience Timeline */}
+            {getSection('Timeline') && (
+                <AnimatedTimelineSection content={getSection('Timeline').content} />
+            )}
+
+            {/* Projects Showcase */}
+            {getSection('Projects') && (
+                <AnimatedProjectsSection content={getSection('Projects').content} />
+            )}
+
+            {/* Contact Section */}
+            <ContactSection />
+
+            {/* Footer */}
+            <footer className="relative py-12 text-center
+                             bg-slate-900 dark:bg-black text-white">
+                <div className="max-w-5xl mx-auto px-6">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        className="mb-6"
+                    >
+                        <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                            {portfolio.title}
+                        </h3>
+                    </motion.div>
+                    
+                    <p className="text-slate-400 text-sm">
+                        &copy; {new Date().getFullYear()} All rights reserved.
+                    </p>
+                    <p className="text-slate-500 text-xs mt-2">
+                        Crafted with ❤️ using FolioForge AI
+                    </p>
+                </div>
             </footer>
-        </div>
+        </motion.div>
     );
 };
 

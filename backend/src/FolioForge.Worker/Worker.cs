@@ -165,12 +165,14 @@ public class ExperienceDto
 {
     public string Company { get; set; }
     public string Role { get; set; }
-    public string Description { get; set; } // Or "Duration" depending on your prompt
+    // Changed from 'Description' to 'Points' for structured bullet points
+    public List<string> Points { get; set; } = new();
 }
 
 public class ProjectDto
 {
     public string Name { get; set; }
     public string TechStack { get; set; }
-    public string Description { get; set; }
+    // Changed from 'Description' to 'Points' for structured bullet points
+    public List<string> Points { get; set; } = new();
 }
