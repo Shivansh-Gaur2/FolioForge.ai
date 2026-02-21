@@ -22,7 +22,7 @@ const PortfolioContent = ({ portfolio }) => {
     try { 
         const aboutContent = getSection('About')?.content;
         if (aboutContent) bio = JSON.parse(aboutContent).content; 
-    } catch {}
+    } catch { /* bio parse failed, use default */ }
 
     const scrollToContact = () => {
         document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });

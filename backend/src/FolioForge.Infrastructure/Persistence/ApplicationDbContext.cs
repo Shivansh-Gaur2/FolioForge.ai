@@ -101,8 +101,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             // We store the ThemeConfig object as a raw JSON string
             entity.Property(e => e.Theme)
                   .HasConversion(
-                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions)null),
-                      v => System.Text.Json.JsonSerializer.Deserialize<Portfolio.ThemeConfig>(v, (System.Text.Json.JsonSerializerOptions)null)
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<Portfolio.ThemeConfig>(v, (System.Text.Json.JsonSerializerOptions?)null)
+                          ?? new Portfolio.ThemeConfig("default", "#000000", "Inter")
                   )
                   .HasColumnType("nvarchar(max)")
                   .IsRequired();

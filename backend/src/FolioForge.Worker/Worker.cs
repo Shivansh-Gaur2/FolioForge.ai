@@ -13,8 +13,8 @@ namespace FolioForge.Worker;
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private IConnection _connection;
-    private IChannel _channel;
+    private IConnection? _connection;
+    private IChannel? _channel;
     // My database is supposed to be scoped , so I need to create a scope to resolve it inside the worker
     // Instead of injecting the IPdfService directly, I inject the IServiceScopeFactory to create a scope when processing each message
     private readonly IServiceScopeFactory _scopeFactory;
@@ -39,6 +39,9 @@ public class Worker : BackgroundService
     }
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_channel is null)
+            throw new InvalidOperationException("Channel not initialized. Ensure StartAsync completed.");
+
         var consumer = new AsyncEventingBasicConsumer(_channel);
 
         consumer.ReceivedAsync += async (model, ea) =>
@@ -93,6 +96,8 @@ public class Worker : BackgroundService
 
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var data = JsonSerializer.Deserialize<AiResultDto>(jsonString, options);
+                if (data is null)
+                    throw new InvalidOperationException("Failed to deserialize AI response into AiResultDto.");
 
                 // ==================================================
                 // THE FIX: Transactional Nuke & Pave
@@ -155,24 +160,24 @@ public class Worker : BackgroundService
 // DTO Classes for JSON Parsing
 public class AiResultDto
 {
-    public string Summary { get; set; }
-    public List<string> Skills { get; set; }
-    public List<ExperienceDto> Experience { get; set; }
-    public List<ProjectDto> Projects { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public List<string> Skills { get; set; } = new();
+    public List<ExperienceDto> Experience { get; set; } = new();
+    public List<ProjectDto> Projects { get; set; } = new();
 }
 
 public class ExperienceDto
 {
-    public string Company { get; set; }
-    public string Role { get; set; }
+    public string Company { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
     // Changed from 'Description' to 'Points' for structured bullet points
     public List<string> Points { get; set; } = new();
 }
 
 public class ProjectDto
 {
-    public string Name { get; set; }
-    public string TechStack { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string TechStack { get; set; } = string.Empty;
     // Changed from 'Description' to 'Points' for structured bullet points
     public List<string> Points { get; set; } = new();
 }
