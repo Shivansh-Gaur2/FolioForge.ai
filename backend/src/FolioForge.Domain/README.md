@@ -24,13 +24,16 @@ This is the innermost layer of Clean Architecture, containing the core business 
 FolioForge.Domain/
 ├── Entities/
 │   ├── BaseEntity.cs              # Abstract base for all entities
-│   ├── Portfolio.cs               # Aggregate root for portfolios
-│   └── PortfolioSection.cs        # Widget/section entity
+│   ├── Portfolio.cs               # Aggregate root for portfolios (multi-tenant)
+│   ├── PortfolioSection.cs        # Widget/section entity
+│   ├── Tenant.cs                  # Tenant/workspace entity
+│   └── User.cs                    # User entity (multi-tenant)
 ├── Common/
 │   └── Result.cs                  # Result pattern for operations
 ├── Interfaces/
 │   ├── IPortfolioRepository.cs    # Repository contract
-│   └── IEventPublisher.cs         # Event publishing contract
+│   ├── IEventPublisher.cs         # Event publishing contract
+│   └── ITenantEntity.cs           # Marker interface for tenant-scoped entities
 └── FolioForge.Domain.csproj
 ```
 
@@ -61,16 +64,19 @@ public abstract class BaseEntity
 
 ### Portfolio (Aggregate Root)
 
-The primary aggregate root representing a user's portfolio:
+The primary aggregate root representing a user's portfolio. Implements `ITenantEntity` for row-level multi-tenant isolation:
 
 ```csharp
-public class Portfolio : BaseEntity
+public class Portfolio : BaseEntity, ITenantEntity
 {
     // Immutable after creation - URL stability
     public string Slug { get; private set; } = default!;
     
     // Owner reference
     public Guid UserId { get; private set; }
+    
+    // Multi-tenancy - row-level isolation
+    public Guid TenantId { get; set; }
     
     // Editable properties
     public string Title { get; private set; } = default!;
@@ -86,9 +92,10 @@ public class Portfolio : BaseEntity
     private Portfolio() { }
     
     // Public constructor enforces invariants
-    public Portfolio(Guid userId, string slug, string title)
+    public Portfolio(Guid userId, Guid tenantId, string slug, string title)
     {
         UserId = userId;
+        TenantId = tenantId;
         Slug = slug;
         Title = title;
         IsPublished = true;
@@ -116,6 +123,94 @@ public class Portfolio : BaseEntity
 | `private Portfolio()` constructor | Required for EF Core, prevents invalid state |
 | Public constructor with required params | Ensures entity is always valid after creation |
 | `AddSection` method | Controls how sections are added, could add validation |
+| `ITenantEntity` implementation | Enables automatic tenant scoping via EF Core global query filters |
+
+---
+
+### Tenant
+
+Represents a workspace/organization for multi-tenant isolation:
+
+```csharp
+public class Tenant : BaseEntity
+{
+    public string Name { get; private set; } = default!;
+    
+    // URL-friendly identifier (e.g., "acme-corp")
+    public string Identifier { get; private set; } = default!;
+    
+    public bool IsActive { get; private set; } = true;
+    
+    private Tenant() { }
+    
+    public Tenant(string name, string identifier)
+    {
+        Name = name;
+        Identifier = identifier.ToLowerInvariant();
+    }
+    
+    public void Deactivate() => IsActive = false;
+    public void Activate() => IsActive = true;
+}
+```
+
+**Key Design Decisions:**
+- `Identifier` is always lowercased for URL consistency
+- `IsActive` flag allows soft-disabling tenants without deletion
+- No `ITenantEntity` — tenants are the top-level isolation unit
+
+---
+
+### User
+
+Authenticated user belonging to a specific tenant:
+
+```csharp
+public class User : BaseEntity, ITenantEntity
+{
+    public string Email { get; private set; } = default!;       // Globally unique
+    public string FullName { get; private set; } = default!;
+    public string PasswordHash { get; private set; } = default!; // BCrypt hash
+    public Guid TenantId { get; set; }                           // Row-level isolation
+    
+    private User() { }
+    
+    public User(string email, string fullName, string passwordHash, Guid tenantId)
+    {
+        Email = email.ToLowerInvariant();
+        FullName = fullName;
+        PasswordHash = passwordHash;
+        TenantId = tenantId;
+    }
+    
+    public void UpdateProfile(string fullName)
+    {
+        FullName = fullName;
+    }
+}
+```
+
+**Design Decisions:**
+- Email is globally unique (not per-tenant) to prevent confusion
+- Password stored as BCrypt hash — never plaintext
+- Implements `ITenantEntity` for automatic query scoping
+
+---
+
+### ITenantEntity (Marker Interface)
+
+```csharp
+public interface ITenantEntity
+{
+    Guid TenantId { get; set; }
+}
+```
+
+**Purpose:**
+- Marks entities that participate in tenant isolation
+- EF Core `SaveChangesAsync` override automatically sets `TenantId` on new `ITenantEntity` entries
+- Global query filters automatically add `WHERE TenantId = @currentTenantId` to all queries
+- Implemented by: `Portfolio`, `User`
 
 ---
 
@@ -290,12 +385,6 @@ public interface IPortfolioRepository
 }
 ```
 
-**Why Interface in Domain Layer?**
-- Domain defines what it needs (contract)
-- Infrastructure provides implementation
-- Enables testing with mocks
-- Follows Dependency Inversion Principle
-
 ### IEventPublisher
 
 ```csharp
@@ -305,6 +394,12 @@ public interface IEventPublisher
 }
 ```
 
+**Why Interface in Domain Layer?**
+- Domain defines what it needs (contract)
+- Infrastructure provides implementation
+- Enables testing with mocks
+- Follows Dependency Inversion Principle
+
 ---
 
 ## 🧪 Domain Rules (Invariants)
@@ -313,9 +408,13 @@ public interface IEventPublisher
 |------|-------------|
 | Portfolio must have a slug | Constructor requires slug |
 | Portfolio must have a title | Constructor requires title |
+| Portfolio must belong to a tenant | Constructor requires tenantId |
 | Slug is immutable after creation | `private set` |
 | Theme cannot be null | Initialized in constructor |
 | Section must have a type | Constructor requires sectionType |
+| User email must be lowercase | Constructor lowercases email |
+| Tenant identifier must be lowercase | Constructor lowercases identifier |
+| User must belong to a tenant | Constructor requires tenantId |
 
 ---
 
