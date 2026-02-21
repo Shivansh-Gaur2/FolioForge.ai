@@ -39,6 +39,13 @@ export const config = Object.freeze({
         timeout: parseNumber(getEnvVar('VITE_API_TIMEOUT'), 15000),
     },
 
+    // Multi-Tenancy
+    tenant: {
+        // The tenant identifier sent with every API request via X-Tenant-Id header.
+        // Override with VITE_TENANT_ID env var. Falls back to 'default' for development.
+        identifier: getEnvVar('VITE_TENANT_ID', 'default'),
+    },
+
     // Feature Flags
     features: {
         analytics: parseBoolean(getEnvVar('VITE_ENABLE_ANALYTICS'), false),

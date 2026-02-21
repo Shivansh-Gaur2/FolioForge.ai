@@ -1,4 +1,5 @@
 using FolioForge.Infrastructure;
+using FolioForge.Infrastructure.Middleware;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Microsoft.Extensions.Configuration;
@@ -91,6 +92,10 @@ if (app.Environment.IsDevelopment())
     });
 }
 app.UseCors("AllowReactApp");
+
+// Multi-Tenancy: Resolve tenant from X-Tenant-Id header before any controller logic
+app.UseMiddleware<TenantMiddleware>();
+
 app.UseHttpsRedirection();
 
 app.UseAuthorization();

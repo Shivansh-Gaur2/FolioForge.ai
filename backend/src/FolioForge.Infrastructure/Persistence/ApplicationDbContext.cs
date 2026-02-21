@@ -1,22 +1,49 @@
 ﻿using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Entities;
+using FolioForge.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace FolioForge.Infrastructure.Persistence;
 
 public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+    private readonly ITenantContext _tenantContext;
+
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        ITenantContext tenantContext)
         : base(options)
     {
+        _tenantContext = tenantContext;
     }
 
+    public DbSet<Tenant> Tenants { get; set; }
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<PortfolioSection> Sections { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // ============================================================
+        // 0. Configure Tenant (Multi-Tenancy Root)
+        // ============================================================
+        modelBuilder.Entity<Tenant>(entity =>
+        {
+            entity.ToTable("tenants");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.Identifier)
+                  .IsUnique();
+
+            entity.Property(e => e.Name)
+                  .IsRequired()
+                  .HasMaxLength(100);
+
+            entity.Property(e => e.Identifier)
+                  .IsRequired()
+                  .HasMaxLength(50);
+        });
 
         // ============================================================
         // 1. Configure Portfolio (The Core Entity)
@@ -27,8 +54,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
             entity.HasKey(e => e.Id);
 
-            // Create a UNIQUE index on the Slug so two users can't claim "shivansh"
-            entity.HasIndex(e => e.Slug)
+            // Create a UNIQUE index on Slug + TenantId 
+            // so slugs are unique per tenant, not globally
+            entity.HasIndex(e => new { e.TenantId, e.Slug })
                   .IsUnique();
 
             entity.Property(e => e.Slug)
@@ -54,6 +82,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                   .WithOne()
                   .HasForeignKey(s => s.PortfolioId)
                   .OnDelete(DeleteBehavior.Cascade); // If Portfolio is deleted, Sections vanish
+
+            // Index on TenantId for fast tenant-scoped queries
+            entity.HasIndex(e => e.TenantId);
+
+            // ============================================================
+            // MULTI-TENANCY: Global Query Filter
+            // This ensures ALL queries on Portfolios are automatically
+            // scoped to the current tenant. No data leaks possible.
+            // ============================================================
+            entity.HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
         });
 
         // ============================================================
@@ -83,5 +121,21 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.Property(e => e.SortOrder)
                   .HasDefaultValue(0);
         });
+    }
+
+    /// <summary>
+    /// Automatically sets TenantId on new entities that implement ITenantEntity.
+    /// This prevents forgetting to set TenantId when creating new records.
+    /// </summary>
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in ChangeTracker.Entries<ITenantEntity>())
+        {
+            if (entry.State == EntityState.Added && _tenantContext.IsResolved)
+            {
+                entry.Entity.TenantId = _tenantContext.TenantId;
+            }
+        }
+        return await base.SaveChangesAsync(cancellationToken);
     }
 }

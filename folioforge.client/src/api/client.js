@@ -34,6 +34,11 @@ apiClient.interceptors.request.use(
             console.log(`[API] ${requestConfig.method?.toUpperCase()} ${requestConfig.url}`);
         }
         
+        // Multi-Tenancy: Inject tenant identifier into every request
+        if (config.tenant.identifier) {
+            requestConfig.headers['X-Tenant-Id'] = config.tenant.identifier;
+        }
+
         // Future: Inject auth token here
         // const token = authStore.getToken();
         // if (token) requestConfig.headers.Authorization = `Bearer ${token}`;
