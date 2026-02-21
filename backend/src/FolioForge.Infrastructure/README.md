@@ -10,8 +10,10 @@ This layer contains all implementations for external dependencies: databases, me
 
 | Responsibility | Description |
 |----------------|-------------|
-| **Database Access** | Entity Framework Core DbContext and configurations |
-| **Repository Implementations** | Concrete implementations of domain repositories |
+| **Database Access** | Entity Framework Core DbContext with tenant query filters |
+| **Repository Implementations** | Portfolio, Tenant, and User repository implementations |
+| **Multi-Tenancy** | Tenant middleware, scoped tenant context, automatic TenantId assignment |
+| **Authentication** | JWT token generation (HMAC-SHA256) |
 | **External Services** | AI providers (Groq, OpenAI, Gemini), PDF parsing |
 | **Message Queues** | RabbitMQ event publishing |
 | **Dependency Injection** | Service registration extensions |
@@ -22,20 +24,26 @@ This layer contains all implementations for external dependencies: databases, me
 
 ```
 FolioForge.Infrastructure/
+├── Middleware/
+│   └── TenantMiddleware.cs          # Multi-tenant resolution (JWT → Header)
 ├── Persistence/
-│   └── ApplicationDbContext.cs      # EF Core DbContext
+│   └── ApplicationDbContext.cs      # EF Core DbContext (4 DbSets, query filters)
 ├── Repositories/
-│   └── PortfolioRepository.cs       # IPortfolioRepository implementation
+│   ├── PortfolioRepository.cs       # IPortfolioRepository implementation
+│   ├── TenantRepository.cs          # ITenantRepository (IgnoreQueryFilters)
+│   └── UserRepository.cs            # IUserRepository (cross-tenant email check)
 ├── Services/
-│   ├── GroqAiService.cs             # Groq (Llama 3.3) AI implementation
+│   ├── GeminiAiService.cs           # Google Gemini 2.0 Flash implementation
+│   ├── GroqAiService.cs             # Groq Llama 3.3-70B implementation
+│   ├── JwtAuthService.cs            # JWT token generation (IAuthService)
 │   ├── OpenAiService.cs             # OpenAI GPT implementation
-│   ├── GeminiAiService.cs           # Google Gemini implementation
-│   └── PdfService.cs                # PDF text extraction (PdfPig)
+│   ├── PdfService.cs                # PDF text extraction (PdfPig)
+│   └── TenantContext.cs             # Scoped tenant context (ITenantContext)
 ├── Messaging/
 │   └── RabbitMqEventPublisher.cs    # RabbitMQ event publisher
 ├── Migrations/
 │   └── *.cs                         # EF Core migrations
-├── DependencyInjection.cs           # Service registration
+├── DependencyInjection.cs           # Service registration (10 services)
 └── FolioForge.Infrastructure.csproj
 ```
 
@@ -45,103 +53,236 @@ FolioForge.Infrastructure/
 
 ### ApplicationDbContext
 
-The EF Core DbContext managing all database operations:
+The EF Core DbContext managing all database operations with **multi-tenant data isolation**:
 
 ```csharp
 public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
-    public DbSet<Portfolio> Portfolios => Set<Portfolio>();
-    public DbSet<PortfolioSection> Sections => Set<PortfolioSection>();
-    
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) 
-        : base(options) 
-    { }
-    
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    private readonly ITenantContext _tenantContext;
+
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        ITenantContext tenantContext) : base(options)
     {
-        // Portfolio configuration
-        modelBuilder.Entity<Portfolio>(entity =>
-        {
-            entity.HasKey(p => p.Id);
-            entity.Property(p => p.Slug).IsRequired().HasMaxLength(50);
-            entity.HasIndex(p => p.Slug).IsUnique();
-            entity.Property(p => p.Title).IsRequired().HasMaxLength(100);
-            
-            // Theme stored as JSON string
-            entity.Property(p => p.Theme)
-                .HasConversion(
-                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions)null),
-                    v => JsonSerializer.Deserialize<Portfolio.ThemeConfig>(v, (JsonSerializerOptions)null)
-                );
-            
-            // One-to-many relationship
-            entity.HasMany(p => p.Sections)
-                .WithOne()
-                .HasForeignKey(s => s.PortfolioId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-        
-        // Section configuration
-        modelBuilder.Entity<PortfolioSection>(entity =>
-        {
-            entity.HasKey(s => s.Id);
-            entity.Property(s => s.SectionType).IsRequired().HasMaxLength(50);
-            entity.Property(s => s.Content).IsRequired();
-        });
+        _tenantContext = tenantContext;
     }
+
+    public DbSet<Tenant> Tenants { get; set; }
+    public DbSet<User> Users { get; set; }
+    public DbSet<Portfolio> Portfolios { get; set; }
+    public DbSet<PortfolioSection> Sections { get; set; }
 }
 ```
 
+#### Tenant Query Filters
+
+Global query filters automatically scope data to the current tenant:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    // Users are scoped to current tenant
+    modelBuilder.Entity<User>(entity =>
+    {
+        entity.HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+    });
+
+    // Portfolios are scoped to current tenant
+    modelBuilder.Entity<Portfolio>(entity =>
+    {
+        entity.HasIndex(e => new { e.TenantId, e.Slug }).IsUnique();
+        entity.HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+    });
+}
+```
+
+#### Automatic TenantId Assignment
+
+The `SaveChangesAsync` override auto-stamps `TenantId` on new entities that implement `ITenantEntity`:
+
+```csharp
+public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+{
+    foreach (var entry in ChangeTracker.Entries<ITenantEntity>())
+    {
+        if (entry.State == EntityState.Added && _tenantContext.IsResolved)
+        {
+            entry.Entity.TenantId = _tenantContext.TenantId;
+        }
+    }
+    return await base.SaveChangesAsync(cancellationToken);
+}
+```
+
+#### Entity Configuration Summary
+
+| Entity | Table | Key Features |
+|--------|-------|-------------|
+| `Tenant` | `tenants` | Unique `Identifier` index |
+| `User` | `users` | Unique `Email` index, tenant query filter |
+| `Portfolio` | `portfolios` | Composite unique index `(TenantId, Slug)`, tenant query filter, Theme as JSON |
+| `PortfolioSection` | `portfolio_sections` | Cascade delete from Portfolio |
+
 **Key Configurations:**
-- JSON serialization for Theme value object
+- JSON serialization for Theme value object (stored as `nvarchar(max)`)
 - Cascade delete for sections when portfolio is deleted
-- Unique index on slug for fast lookups
+- Composite unique index `(TenantId, Slug)` — slug uniqueness is per-tenant
+- Global query filters on `User` and `Portfolio` for tenant isolation
 
 ---
 
-### PortfolioRepository
+### Repositories
 
-Implementation of `IPortfolioRepository`:
+#### PortfolioRepository
+
+Implementation of `IPortfolioRepository` — all queries are automatically tenant-scoped:
 
 ```csharp
 public class PortfolioRepository : IPortfolioRepository
 {
     private readonly ApplicationDbContext _context;
     
-    public PortfolioRepository(ApplicationDbContext context)
-    {
-        _context = context;
-    }
-    
     public async Task<Portfolio?> GetByIdAsync(Guid id)
-    {
-        return await _context.Portfolios
-            .Include(p => p.Sections)
+        => await _context.Portfolios.Include(p => p.Sections)
             .FirstOrDefaultAsync(p => p.Id == id);
-    }
     
     public async Task<Portfolio?> GetBySlugAsync(string slug)
-    {
-        return await _context.Portfolios
+        => await _context.Portfolios.Include(p => p.Sections)
             .FirstOrDefaultAsync(p => p.Slug == slug);
-    }
     
     public async Task AddAsync(Portfolio portfolio)
-    {
-        await _context.Portfolios.AddAsync(portfolio);
-    }
+        => await _context.Portfolios.AddAsync(portfolio);
+}
+```
+
+#### TenantRepository
+
+Uses `IgnoreQueryFilters()` since tenant lookups must work globally:
+
+```csharp
+public class TenantRepository : ITenantRepository
+{
+    public async Task<Tenant?> GetByIdentifierAsync(string identifier)
+        => await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Identifier == identifier);
+
+    public async Task<Tenant?> GetByIdAsync(Guid id)
+        => await _context.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == id);
+}
+```
+
+#### UserRepository
+
+Login and registration require cross-tenant email checks:
+
+```csharp
+public class UserRepository : IUserRepository
+{
+    // Cross-tenant lookup for login
+    public async Task<User?> GetByEmailAsync(string email)
+        => await _context.Users.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Email == email.ToLowerInvariant());
+
+    // Cross-tenant check for registration
+    public async Task<bool> EmailExistsGloballyAsync(string email)
+        => await _context.Users.IgnoreQueryFilters()
+            .AnyAsync(u => u.Email == email.ToLowerInvariant());
+
+    // Tenant-scoped lookup (uses query filter)
+    public async Task<User?> GetByIdAsync(Guid id)
+        => await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+}
+```
+
+---
+
+## 🔐 Multi-Tenancy & Authentication
+
+### TenantMiddleware
+
+Resolves the current tenant for each HTTP request with a two-strategy fallback:
+
+```
+Request
+  │
+  ├── Path excluded? (/api/auth/*, /api/tenants/*, /swagger/*, /health)
+  │     └── YES → Skip tenant resolution, pass through
+  │
+  ├── Strategy 1: JWT Bearer token
+  │     └── Parse JWT → Extract "tenantId" claim → Lookup tenant → SetTenant()
+  │
+  ├── Strategy 2: X-Tenant-Id header (fallback)
+  │     └── Read header → Lookup by identifier → SetTenant()
+  │
+  └── Neither found → Return 400 Bad Request
+```
+
+**Excluded Paths:** `/api/tenants`, `/api/auth`, `/swagger`, `/health`
+
+### TenantContext
+
+Scoped service (one instance per HTTP request) implementing `ITenantContext`:
+
+```csharp
+public class TenantContext : ITenantContext
+{
+    private Guid _tenantId;
+    private string _identifier = string.Empty;
+
+    public Guid TenantId => IsResolved ? _tenantId 
+        : throw new InvalidOperationException("Tenant has not been resolved.");
     
-    public async Task UpdateAsync(Portfolio portfolio)
+    public string TenantIdentifier => _identifier;
+    public bool IsResolved { get; private set; }
+
+    public void SetTenant(Guid tenantId, string identifier)
     {
-        _context.Portfolios.Update(portfolio);
-    }
-    
-    public async Task SaveChangesAsync()
-    {
-        await _context.SaveChangesAsync();
+        _tenantId = tenantId;
+        _identifier = identifier;
+        IsResolved = true;
     }
 }
 ```
+
+### JwtAuthService
+
+Generates JWT tokens with user and tenant claims using HMAC-SHA256:
+
+```csharp
+public class JwtAuthService : IAuthService
+{
+    public string GenerateToken(Guid userId, Guid tenantId, string email, string fullName)
+    {
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+            new Claim(JwtRegisteredClaimNames.Email, email),
+            new Claim("fullName", fullName),
+            new Claim("tenantId", tenantId.ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        };
+
+        var token = new JwtSecurityToken(
+            issuer: _issuer,       // "FolioForge"
+            audience: _audience,   // "FolioForge.Client"
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(_expirationMinutes), // 1440 = 24h
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+```
+
+| JWT Claim | Value | Purpose |
+|-----------|-------|---------|
+| `sub` | User ID (GUID) | User identification |
+| `email` | User email | Display & lookup |
+| `fullName` | User name | Display |
+| `tenantId` | Tenant ID (GUID) | Tenant resolution by middleware |
+| `jti` | Random GUID | Token unique ID |
 
 ---
 
@@ -340,16 +481,22 @@ public static class DependencyInjection
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         
+        // Multi-Tenancy
+        services.AddScoped<ITenantContext, TenantContext>();
+        
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseSqlServer(connectionString));
-        
-        // Register DbContext as IApplicationDbContext
         services.AddScoped<IApplicationDbContext>(provider => 
             provider.GetRequiredService<ApplicationDbContext>());
         
         // Repositories
         services.AddScoped<IPortfolioRepository, PortfolioRepository>();
+        services.AddScoped<ITenantRepository, TenantRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        
+        // Authentication
+        services.AddScoped<IAuthService, JwtAuthService>();
         
         // Event Publishing
         services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();
@@ -360,24 +507,21 @@ public static class DependencyInjection
         
         return services;
     }
-    
-    public static IServiceCollection AddApplication(this IServiceCollection services)
-    {
-        // MediatR - scans for all Commands/Queries
-        services.AddMediatR(cfg => 
-            cfg.RegisterServicesFromAssembly(typeof(CreatePortfolioCommand).Assembly));
-        
-        return services;
-    }
 }
 ```
 
-**Usage in Program.cs:**
-
-```csharp
-builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddApplication();
-```
+| Registration | Interface | Implementation | Lifetime |
+|---|---|---|---|
+| Tenant Context | `ITenantContext` | `TenantContext` | Scoped |
+| Database | `ApplicationDbContext` | DbContext | Scoped |
+| DbContext Interface | `IApplicationDbContext` | Same instance | Scoped |
+| Portfolio Repo | `IPortfolioRepository` | `PortfolioRepository` | Scoped |
+| Tenant Repo | `ITenantRepository` | `TenantRepository` | Scoped |
+| User Repo | `IUserRepository` | `UserRepository` | Scoped |
+| Auth Service | `IAuthService` | `JwtAuthService` | Scoped |
+| Event Publisher | `IEventPublisher` | `RabbitMqEventPublisher` | Scoped |
+| PDF Service | `IPdfService` | `PdfService` | Scoped |
+| AI Service | `IAiService` | `GroqAiService` | HttpClient |
 
 ---
 
@@ -406,14 +550,20 @@ dotnet ef database update
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.x" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.x" />
     
+    <!-- Authentication -->
+    <PackageReference Include="BCrypt.Net-Next" Version="4.x" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.x" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.x" />
+    
     <!-- Message Queue -->
     <PackageReference Include="RabbitMQ.Client" Version="7.x" />
     
     <!-- PDF Processing -->
     <PackageReference Include="PdfPig" Version="0.x" />
     
-    <!-- HTTP Client -->
+    <!-- AI / HTTP Client -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.x" />
+    <PackageReference Include="OpenAI" Version="2.x" />
 </ItemGroup>
 ```
 
