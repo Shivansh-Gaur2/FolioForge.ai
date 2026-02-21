@@ -18,6 +18,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     }
 
     public DbSet<Tenant> Tenants { get; set; }
+    public DbSet<User> Users { get; set; }
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<PortfolioSection> Sections { get; set; }
 
@@ -43,6 +44,35 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.Property(e => e.Identifier)
                   .IsRequired()
                   .HasMaxLength(50);
+        });
+
+        // ============================================================
+        // 0.5. Configure User (Tenant-Scoped)
+        // ============================================================
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.ToTable("users");
+            entity.HasKey(e => e.Id);
+
+            // Email must be unique globally (not per-tenant)
+            entity.HasIndex(e => e.Email)
+                  .IsUnique();
+
+            entity.Property(e => e.Email)
+                  .IsRequired()
+                  .HasMaxLength(256);
+
+            entity.Property(e => e.FullName)
+                  .IsRequired()
+                  .HasMaxLength(100);
+
+            entity.Property(e => e.PasswordHash)
+                  .IsRequired();
+
+            entity.HasIndex(e => e.TenantId);
+
+            // Tenant query filter — users only see their own tenant's data
+            entity.HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
         });
 
         // ============================================================

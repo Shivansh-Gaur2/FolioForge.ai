@@ -91,7 +91,7 @@ export class ServerError extends ApiError {
  * Factory function to create appropriate error from HTTP response
  */
 export const createErrorFromResponse = (status, data) => {
-    const message = data?.message || data?.title || 'An unexpected error occurred';
+    const message = data?.error || data?.message || data?.title || 'An unexpected error occurred';
     
     switch (status) {
         case 400:
@@ -100,6 +100,8 @@ export const createErrorFromResponse = (status, data) => {
             return new UnauthorizedError(message);
         case 404:
             return new NotFoundError();
+        case 409:
+            return new ApiError(message, 409, data);
         case 500:
         case 502:
         case 503:

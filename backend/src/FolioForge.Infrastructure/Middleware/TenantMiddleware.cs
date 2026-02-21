@@ -5,18 +5,17 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace FolioForge.Infrastructure.Middleware
 {
     /// <summary>
-    /// Middleware that resolves the current tenant from the X-Tenant-Id header.
-    /// Must run early in the pipeline, before any DbContext usage.
+    /// Middleware that resolves the current tenant. Resolution order:
+    /// 1. JWT "tenantId" claim (for authenticated users — no header needed)
+    /// 2. X-Tenant-Id header (for unauthenticated / public endpoints)
     /// 
-    /// Flow:
-    /// 1. Extract tenant identifier from X-Tenant-Id header
-    /// 2. Look up tenant in database (bypassing query filters)
-    /// 3. Populate ITenantContext for the rest of the request
-    /// 4. Return 400 if header missing, 404 if tenant not found, 403 if inactive
+    /// Must run BEFORE authentication so the DbContext query filters are set.
+    /// For JWT-based resolution, we parse the token manually (before ASP.NET auth runs).
     /// </summary>
     public class TenantMiddleware
     {
@@ -24,11 +23,13 @@ namespace FolioForge.Infrastructure.Middleware
         private readonly ILogger<TenantMiddleware> _logger;
 
         /// <summary>
-        /// Paths that don't require tenant resolution (e.g., health checks, tenant management).
+        /// Paths that don't require tenant resolution.
+        /// Auth endpoints handle their own tenant logic internally.
         /// </summary>
         private static readonly string[] ExcludedPaths = new[]
         {
             "/api/tenants",
+            "/api/auth",
             "/swagger",
             "/health"
         };
@@ -50,49 +51,78 @@ namespace FolioForge.Infrastructure.Middleware
                 return;
             }
 
-            // 1. Extract tenant identifier from header
-            if (!context.Request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeader) ||
-                string.IsNullOrWhiteSpace(tenantHeader))
-            {
-                _logger.LogWarning("Request missing X-Tenant-Id header for path: {Path}", path);
-                context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                await context.Response.WriteAsJsonAsync(new { error = "X-Tenant-Id header is required." });
-                return;
-            }
-
-            var tenantIdentifier = tenantHeader.ToString().Trim().ToLowerInvariant();
-
-            // 2. Resolve tenant from database
-            // We use the DbContext directly here (not through repository) 
-            // to bypass global query filters with IgnoreQueryFilters()
             var dbContext = context.RequestServices.GetRequiredService<ApplicationDbContext>();
-            var tenant = await dbContext.Tenants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Identifier == tenantIdentifier);
-
-            if (tenant == null)
-            {
-                _logger.LogWarning("Tenant not found: {TenantIdentifier}", tenantIdentifier);
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                await context.Response.WriteAsJsonAsync(new { error = $"Tenant '{tenantIdentifier}' not found." });
-                return;
-            }
-
-            if (!tenant.IsActive)
-            {
-                _logger.LogWarning("Inactive tenant attempted access: {TenantIdentifier}", tenantIdentifier);
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new { error = "Tenant is deactivated." });
-                return;
-            }
-
-            // 3. Populate tenant context for the rest of the pipeline
             var tenantContext = context.RequestServices.GetRequiredService<ITenantContext>();
-            tenantContext.SetTenant(tenant.Id, tenant.Identifier);
 
-            _logger.LogDebug("Tenant resolved: {TenantIdentifier} ({TenantId})", tenant.Identifier, tenant.Id);
+            // ── Strategy 1: Try to resolve tenant from JWT Bearer token ──
+            var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+            if (authHeader != null && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                var tokenString = authHeader.Substring("Bearer ".Length).Trim();
+                try
+                {
+                    var handler = new JwtSecurityTokenHandler();
+                    if (handler.CanReadToken(tokenString))
+                    {
+                        var jwt = handler.ReadJwtToken(tokenString);
+                        var tenantIdClaim = jwt.Claims.FirstOrDefault(c => c.Type == "tenantId")?.Value;
 
-            await _next(context);
+                        if (tenantIdClaim != null && Guid.TryParse(tenantIdClaim, out var tenantId))
+                        {
+                            var tenant = await dbContext.Tenants
+                                .IgnoreQueryFilters()
+                                .FirstOrDefaultAsync(t => t.Id == tenantId);
+
+                            if (tenant != null && tenant.IsActive)
+                            {
+                                tenantContext.SetTenant(tenant.Id, tenant.Identifier);
+                                _logger.LogDebug("Tenant resolved from JWT: {TenantIdentifier}", tenant.Identifier);
+                                await _next(context);
+                                return;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse JWT for tenant resolution, falling back to header.");
+                }
+            }
+
+            // ── Strategy 2: Fall back to X-Tenant-Id header ──
+            if (context.Request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeader) &&
+                !string.IsNullOrWhiteSpace(tenantHeader))
+            {
+                var tenantIdentifier = tenantHeader.ToString().Trim().ToLowerInvariant();
+
+                var tenant = await dbContext.Tenants
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Identifier == tenantIdentifier);
+
+                if (tenant == null)
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    await context.Response.WriteAsJsonAsync(new { error = $"Tenant '{tenantIdentifier}' not found." });
+                    return;
+                }
+
+                if (!tenant.IsActive)
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { error = "Tenant is deactivated." });
+                    return;
+                }
+
+                tenantContext.SetTenant(tenant.Id, tenant.Identifier);
+                _logger.LogDebug("Tenant resolved from header: {TenantIdentifier}", tenant.Identifier);
+                await _next(context);
+                return;
+            }
+
+            // ── Neither JWT nor header provided ──
+            _logger.LogWarning("No tenant could be resolved for path: {Path}", path);
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { error = "Authentication required. Please log in or provide X-Tenant-Id header." });
         }
     }
 }
