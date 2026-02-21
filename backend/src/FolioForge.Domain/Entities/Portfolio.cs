@@ -3,10 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FolioForge.Domain.Interfaces;
 
 namespace FolioForge.Domain.Entities
 {
-    public class Portfolio : BaseEntity
+    public class Portfolio : BaseEntity, ITenantEntity
     {
         // private set because we don't want to allow external code to modify these properties directly,
         // we want to control how they are set through methods in the class.
@@ -15,6 +16,7 @@ namespace FolioForge.Domain.Entities
         public string Slug { get; private set; } = default!;
 
         public Guid UserId { get; private set; }
+        public Guid TenantId { get; set; }
         public string Title { get; private set; } = default!;
         public bool IsPublished { get; private set; }
 
@@ -29,9 +31,10 @@ namespace FolioForge.Domain.Entities
 
         private Portfolio() { }
 
-        public Portfolio(Guid userId, string slug, string title)
+        public Portfolio(Guid userId, Guid tenantId, string slug, string title)
         {
             UserId = userId;
+            TenantId = tenantId;
             Slug = slug;
             Title = title;
             IsPublished = true;

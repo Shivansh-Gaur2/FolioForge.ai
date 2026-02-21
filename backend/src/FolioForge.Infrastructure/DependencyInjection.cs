@@ -18,6 +18,10 @@ namespace FolioForge.Infrastructure
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+            // Register tenant context as scoped (one per request)
+            services.AddScoped<ITenantContext, TenantContext>();
+
             // Register DbContext
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(connectionString));
@@ -27,6 +31,9 @@ namespace FolioForge.Infrastructure
                 provider.GetRequiredService<ApplicationDbContext>());
 
             services.AddScoped<IPortfolioRepository, PortfolioRepository>();
+            services.AddScoped<ITenantRepository, TenantRepository>();
+            services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<IAuthService, JwtAuthService>();
             services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();
             services.AddScoped<IPdfService, PdfService>();
             services.AddHttpClient<IAiService, GroqAiService>(); 

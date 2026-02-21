@@ -15,7 +15,7 @@ public class GroqAiService : IAiService
     public GroqAiService(HttpClient httpClient, IConfiguration config, ILogger<GroqAiService> logger)
     {
         _httpClient = httpClient;
-        _apiKey = config["Groq:ApiKey"];
+        _apiKey = config["Groq:ApiKey"] ?? throw new InvalidOperationException("Groq:ApiKey configuration is missing");
         _logger = logger;
     }
 
@@ -69,7 +69,7 @@ public class GroqAiService : IAiService
             .GetProperty("content")
             .GetString();
 
-        return CleanJson(textResult);
+        return CleanJson(textResult ?? throw new InvalidOperationException("AI response text is null"));
     }
 
     private string BuildPrompt(string resumeText)

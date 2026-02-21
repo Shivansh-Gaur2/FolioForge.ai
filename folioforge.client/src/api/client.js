@@ -34,9 +34,16 @@ apiClient.interceptors.request.use(
             console.log(`[API] ${requestConfig.method?.toUpperCase()} ${requestConfig.url}`);
         }
         
-        // Future: Inject auth token here
-        // const token = authStore.getToken();
-        // if (token) requestConfig.headers.Authorization = `Bearer ${token}`;
+        // Multi-Tenancy: Inject tenant identifier into every request
+        if (config.tenant.identifier) {
+            requestConfig.headers['X-Tenant-Id'] = config.tenant.identifier;
+        }
+
+        // Auth: Inject JWT Bearer token if present
+        const token = localStorage.getItem('ff_token');
+        if (token) {
+            requestConfig.headers['Authorization'] = `Bearer ${token}`;
+        }
         
         return requestConfig;
     },
@@ -67,6 +74,12 @@ apiClient.interceptors.response.use(
         
         if (config.features.debugLogging) {
             console.error(`[API] Error ${status}:`, data);
+        }
+
+        // Auto-clear auth on 401 (token expired / invalid)
+        if (status === 401) {
+            localStorage.removeItem('ff_token');
+            localStorage.removeItem('ff_user');
         }
 
         return Promise.reject(createErrorFromResponse(status, data));

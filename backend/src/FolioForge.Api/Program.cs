@@ -1,7 +1,11 @@
 using FolioForge.Infrastructure;
+using FolioForge.Infrastructure.Middleware;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Microsoft.Extensions.Configuration;
+using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // ==================================================================
@@ -55,7 +59,36 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApplication(); // Registers MediatR commands
 
 // ==================================================================
-// 2. API & SWAGGER CONFIGURATION
+// 2. JWT AUTHENTICATION
+// ==================================================================
+var jwtSecret = builder.Configuration["Jwt:Secret"]!;
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "FolioForge";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "FolioForge.Client";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        // Map "sub" claim correctly
+        NameClaimType = System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub,
+    };
+});
+builder.Services.AddAuthorization();
+
+// ==================================================================
+// 3. API & SWAGGER CONFIGURATION
 // ==================================================================
 
 // Add support for Controllers (since we are using Clean Architecture, not Minimal APIs)
@@ -70,6 +103,31 @@ builder.Services.AddSwaggerGen(c =>
         Title = "FolioForge API",
         Version = "v1",
         Description = "AI-Powered Portfolio Builder API"
+    });
+
+    // Add JWT Bearer support to Swagger UI
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter your JWT token"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
     });
 });
 
@@ -91,8 +149,13 @@ if (app.Environment.IsDevelopment())
     });
 }
 app.UseCors("AllowReactApp");
+
+// Multi-Tenancy: Resolve tenant from JWT or X-Tenant-Id header
+app.UseMiddleware<TenantMiddleware>();
+
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 // Map the Controllers (connects your PortfoliosController)

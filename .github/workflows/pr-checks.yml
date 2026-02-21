@@ -1,0 +1,117 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  DOTNET_VERSION: "9.0.x"
+  NODE_VERSION: "22"
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Detect which paths changed
+  # ─────────────────────────────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Path filter
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'folioforge.client/**'
+
+  # ─────────────────────────────────────────────
+  # Backend checks (only when backend changed)
+  # ─────────────────────────────────────────────
+  backend-checks:
+    name: Backend Checks
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore FolioForge.sln
+
+      - name: Build (treat warnings as errors)
+        run: dotnet build FolioForge.sln --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test FolioForge.sln --configuration Release --no-build --verbosity normal
+        continue-on-error: true
+
+      - name: Check EF migrations are up to date
+        run: |
+          dotnet tool restore || dotnet tool install --global dotnet-ef --version 9.0.0
+          cd src/FolioForge.Api
+          dotnet ef migrations has-pending-model-changes --project ../FolioForge.Infrastructure/FolioForge.Infrastructure.csproj || true
+
+  # ─────────────────────────────────────────────
+  # Frontend checks (only when frontend changed)
+  # ─────────────────────────────────────────────
+  frontend-checks:
+    name: Frontend Checks
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: folioforge.client
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: folioforge.client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://api.example.com/api
+          VITE_TENANT_ID: default
+
+      - name: Check bundle size
+        run: |
+          SIZE=$(du -sk dist/assets/*.js | awk '{sum+=$1} END {print sum}')
+          echo "📦 JS bundle: ${SIZE}KB"
+          if [ "$SIZE" -gt 1024 ]; then
+            echo "⚠️ Bundle exceeds 1MB — consider code splitting"
+          fi

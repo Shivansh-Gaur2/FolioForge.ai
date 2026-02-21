@@ -18,7 +18,7 @@ public class GeminiAiService : IAiService
     public GeminiAiService(HttpClient httpClient, IConfiguration config, ILogger<GeminiAiService> logger)
     {
         _httpClient = httpClient;
-        _apiKey = config["Gemini:ApiKey"];
+        _apiKey = config["Gemini:ApiKey"] ?? throw new InvalidOperationException("Gemini:ApiKey configuration is missing");
         _logger = logger;
     }
 
@@ -74,9 +74,9 @@ public class GeminiAiService : IAiService
                 .GetProperty("text")
                 .GetString();
 
-            return CleanJson(textResult);
+            return CleanJson(textResult ?? throw new InvalidOperationException("AI response text is null"));
         }
-        catch (Exception ex)
+        catch (JsonException)
         {
             _logger.LogError($"Failed to parse Gemini response: {responseString}");
             throw;

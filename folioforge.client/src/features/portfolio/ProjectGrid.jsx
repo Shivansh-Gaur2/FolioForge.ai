@@ -5,7 +5,7 @@ export const ProjectGrid = ({ content }) => {
     let projects = [];
     try {
         projects = JSON.parse(content).items || [];
-    } catch (e) { return null; }
+    } catch { return null; }
 
     return (
         <section className="mb-12">

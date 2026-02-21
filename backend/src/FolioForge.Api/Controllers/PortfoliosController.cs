@@ -4,12 +4,16 @@ using FolioForge.Application.Common.Events;
 using FolioForge.Application.Portfolios.Queries;
 using FolioForge.Domain.Interfaces;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace FolioForge.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class PortfoliosController : ControllerBase
     {
         private readonly ISender _mediator;
@@ -21,10 +25,20 @@ namespace FolioForge.Api.Controllers
             _publisher = publisher;
         }
 
+        /// <summary>
+        /// Helper to extract UserId from the JWT claims.
+        /// </summary>
+        private Guid GetUserId()
+        {
+            var sub = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                   ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Guid.Parse(sub!);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreatePortfolioRequest request)
         {
-            var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+            var userId = GetUserId();
 
             var command = new CreatePortfolioCommand(userId, request.Title, request.Slug);
 

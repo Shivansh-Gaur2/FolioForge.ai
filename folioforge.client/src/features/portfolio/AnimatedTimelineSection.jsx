@@ -3,7 +3,7 @@ import { useInView } from 'react-intersection-observer';
 import { ScrollReveal } from '../../components/animations/ScrollReveal';
 import { SmartContent } from '../../components/ui/SmartContent';
 
-const TimelineItem = ({ item, index, isLeft }) => {
+const TimelineItem = ({ item, isLeft }) => {
     const [ref, inView] = useInView({ threshold: 0.3, triggerOnce: true });
 
     return (
