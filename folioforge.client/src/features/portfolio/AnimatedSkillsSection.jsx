@@ -107,7 +107,42 @@ const SkillCategory = ({ category, skills, index }) => {
     );
 };
 
-export const AnimatedSkillsSection = ({ content }) => {
+const SkillBar = ({ skill, index }) => {
+    const [ref, inView] = useInView({ threshold: 0.2, triggerOnce: true });
+    // Derive a pseudo-random proficiency level from the skill name (deterministic)
+    const hash = skill.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const level = 65 + (hash % 30); // 65-94%
+
+    return (
+        <motion.div
+            ref={ref}
+            initial={{ opacity: 0, x: -20 }}
+            animate={inView ? { opacity: 1, x: 0 } : {}}
+            transition={{ duration: 0.4, delay: index * 0.06 }}
+            className="group"
+        >
+            <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 
+                               group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                    {skill}
+                </span>
+                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                    {level}%
+                </span>
+            </div>
+            <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-700/60 overflow-hidden">
+                <motion.div
+                    initial={{ width: 0 }}
+                    animate={inView ? { width: `${level}%` } : { width: 0 }}
+                    transition={{ duration: 1, delay: index * 0.06 + 0.2, ease: 'easeOut' }}
+                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600"
+                />
+            </div>
+        </motion.div>
+    );
+};
+
+export const AnimatedSkillsSection = ({ content, variant = 'default' }) => {
     let skills = [];
     try {
         const parsed = JSON.parse(content);
@@ -146,17 +181,44 @@ export const AnimatedSkillsSection = ({ content }) => {
                     </div>
                 </ScrollReveal>
 
-                {/* Skills grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {categories.map(([category, categorySkills], index) => (
-                        <SkillCategory
-                            key={category}
-                            category={category}
-                            skills={categorySkills}
-                            index={index}
-                        />
-                    ))}
-                </div>
+                {/* ── Variant: Badges (default) ─ flat badge cloud ── */}
+                {variant === 'default' && (
+                    <div className="flex flex-wrap justify-center gap-3">
+                        {skills.map((skill, idx) => (
+                            <SkillBadge
+                                key={skill}
+                                skill={skill}
+                                color={categoryColors[
+                                    Object.entries(categorizedSkills).find(([, arr]) => arr.includes(skill))?.[0] || 'Other'
+                                ] || categoryColors['Other']}
+                                index={idx}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Variant: Progress Bars ── */}
+                {variant === 'bars' && (
+                    <div className="max-w-3xl mx-auto space-y-4">
+                        {skills.map((skill, idx) => (
+                            <SkillBar key={skill} skill={skill} index={idx} />
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Variant: Grouped (categorized cards) ── */}
+                {variant === 'grouped' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {categories.map(([category, categorySkills], index) => (
+                            <SkillCategory
+                                key={category}
+                                category={category}
+                                skills={categorySkills}
+                                index={index}
+                            />
+                        ))}
+                    </div>
+                )}
 
                 {/* Stats bar */}
                 <ScrollReveal delay={0.3}>

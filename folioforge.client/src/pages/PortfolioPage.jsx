@@ -14,10 +14,10 @@ import { ContactSection } from '../features/portfolio/ContactSection';
  * Hero/About are handled separately outside this map.
  */
 const SECTION_RENDERERS = {
-    skills:    (section) => <AnimatedSkillsSection key={section.id} content={section.content} />,
-    timeline:  (section) => <AnimatedTimelineSection key={section.id} content={section.content} />,
-    projects:  (section) => <AnimatedProjectsSection key={section.id} content={section.content} />,
-    contact:   (section) => <ContactSection key={section.id} />,
+    skills:    (section) => <AnimatedSkillsSection key={section.id} content={section.content} variant={section.variant} />,
+    timeline:  (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
+    projects:  (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
+    contact:   (section) => <ContactSection key={section.id} variant={section.variant} />,
 };
 
 /** Section-type icons used for sidebar navigation */
@@ -85,16 +85,21 @@ const PortfolioContent = ({ portfolio }) => {
     };
 
     // ── Render a single section by its type ────────────────────
-    const renderSection = (section) => {
+    const renderSection = (section, extraClass = '') => {
         const type = section.sectionType?.toLowerCase();
         const renderer = SECTION_RENDERERS[type];
         if (!renderer) return null;
         return (
-            <div key={section.id} id={type}>
+            <div key={section.id} id={type} className={extraClass}>
                 {renderer(section)}
             </div>
         );
     };
+
+    // ── Two-column: classify sections as full-width or half-width ──
+    // Wide/complex sections span both columns; compact ones sit side-by-side
+    const FULL_WIDTH_TYPES = ['projects', 'timeline', 'contact'];
+    const isFullWidth = (s) => FULL_WIDTH_TYPES.includes(s.sectionType?.toLowerCase());
 
     // ── Layout class for the body sections wrapper ─────────────
     const layoutClass =
@@ -165,9 +170,20 @@ const PortfolioContent = ({ portfolio }) => {
                 )}
 
                 {/* Main content area */}
-                <main className="flex-1 min-w-0">
-                    {bodySections.map(renderSection)}
-                </main>
+                {layout === 'two-column' ? (
+                    // Smart two-column: full-width sections span both cols,
+                    // compact sections sit side-by-side
+                    bodySections.map(section =>
+                        renderSection(
+                            section,
+                            isFullWidth(section) ? 'md:col-span-2' : ''
+                        )
+                    )
+                ) : (
+                    <main className="flex-1 min-w-0">
+                        {bodySections.map(s => renderSection(s))}
+                    </main>
+                )}
             </div>
 
             {/* Footer */}

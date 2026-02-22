@@ -176,7 +176,107 @@ const ProjectCard = ({ project, index }) => {
     );
 };
 
-export const AnimatedProjectsSection = ({ content }) => {
+/* ── Showcase variant: large featured card, one project at a time look ── */
+const ProjectShowcase = ({ project, index }) => {
+    const [ref, inView] = useInView({ threshold: 0.15, triggerOnce: true });
+    const gradient = gradients[index % gradients.length];
+    const techStack = project.TechStack?.split(',').map(t => t.trim()) || [];
+    const isEven = index % 2 === 0;
+
+    return (
+        <motion.div
+            ref={ref}
+            initial={{ opacity: 0, y: 40 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6, delay: index * 0.15 }}
+            className="grid grid-cols-1 md:grid-cols-2 gap-0 rounded-3xl overflow-hidden
+                     bg-white dark:bg-slate-800
+                     border border-slate-100 dark:border-slate-700/50
+                     shadow-2xl shadow-slate-200/50 dark:shadow-black/30"
+        >
+            {/* Gradient visual panel */}
+            <div className={`relative h-64 md:h-auto bg-gradient-to-br ${gradient} p-8 flex flex-col justify-end ${isEven ? '' : 'md:order-2'}`}>
+                <div className="absolute inset-0 opacity-20">
+                    <div className="absolute top-8 right-8 w-40 h-40 border border-white/30 rounded-3xl rotate-12" />
+                    <div className="absolute bottom-8 left-8 w-28 h-28 border border-white/30 rounded-full" />
+                </div>
+                <span className="text-8xl font-black text-white/20 absolute top-4 right-6">
+                    {String(index + 1).padStart(2, '0')}
+                </span>
+                <div className="relative z-10">
+                    <div className="text-5xl mb-3">{index % 2 === 0 ? '🚀' : '💡'}</div>
+                    <div className="flex flex-wrap gap-2">
+                        {techStack.map((tech) => (
+                            <span key={tech} className="px-2.5 py-1 rounded-lg text-xs font-medium
+                                         bg-white/20 backdrop-blur-sm text-white">
+                                {getTechIcon(tech)} {tech}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Content panel */}
+            <div className={`p-8 md:p-10 flex flex-col justify-center ${isEven ? '' : 'md:order-1'}`}>
+                <h3 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-4">
+                    {project.Name}
+                </h3>
+                <SmartContent content={project.Points || project.Description} variant="gradient" />
+                <div className="mt-6 flex gap-3">
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                        className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-white 
+                                 text-white dark:text-slate-900 text-sm font-semibold shadow-lg">
+                        View Project
+                    </motion.button>
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                        className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600
+                                 text-slate-600 dark:text-slate-300 text-sm font-medium">
+                        Source Code
+                    </motion.button>
+                </div>
+            </div>
+        </motion.div>
+    );
+};
+
+/* ── Minimal / list variant ── */
+const ProjectListItem = ({ project, index }) => {
+    const [ref, inView] = useInView({ threshold: 0.3, triggerOnce: true });
+    const techStack = project.TechStack?.split(',').map(t => t.trim()) || [];
+
+    return (
+        <motion.div
+            ref={ref}
+            initial={{ opacity: 0, x: -16 }}
+            animate={inView ? { opacity: 1, x: 0 } : {}}
+            transition={{ duration: 0.4, delay: index * 0.08 }}
+            className="flex gap-5 items-start group py-5
+                     border-b border-slate-100 dark:border-slate-800 last:border-0"
+        >
+            <span className="text-sm font-mono font-bold text-slate-300 dark:text-slate-600 pt-1 select-none">
+                {String(index + 1).padStart(2, '0')}
+            </span>
+            <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white
+                             group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                    {project.Name}
+                </h3>
+                <SmartContent content={project.Points || project.Description} variant="gradient" />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                    {techStack.map((tech) => (
+                        <span key={tech} className="px-2 py-0.5 rounded text-xs
+                                     bg-slate-100 dark:bg-slate-700/50
+                                     text-slate-500 dark:text-slate-400">
+                            {tech}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </motion.div>
+    );
+};
+
+export const AnimatedProjectsSection = ({ content, variant = 'default' }) => {
     let projects = [];
     try {
         const parsed = JSON.parse(content);
@@ -213,12 +313,34 @@ export const AnimatedProjectsSection = ({ content }) => {
                     </div>
                 </ScrollReveal>
 
-                {/* Projects grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {projects.map((project, index) => (
-                        <ProjectCard key={project.Name} project={project} index={index} />
-                    ))}
-                </div>
+                {/* ── Default: grid cards ── */}
+                {variant === 'default' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {projects.map((project, index) => (
+                            <ProjectCard key={project.Name} project={project} index={index} />
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Showcase: large alternating feature cards ── */}
+                {variant === 'showcase' && (
+                    <div className="space-y-10">
+                        {projects.map((project, index) => (
+                            <ProjectShowcase key={project.Name} project={project} index={index} />
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Minimal: compact list ── */}
+                {variant === 'minimal' && (
+                    <div className="max-w-3xl mx-auto bg-white dark:bg-slate-800/50 
+                                  rounded-2xl border border-slate-100 dark:border-slate-700/50
+                                  shadow-xl p-6 md:p-8">
+                        {projects.map((project, index) => (
+                            <ProjectListItem key={project.Name} project={project} index={index} />
+                        ))}
+                    </div>
+                )}
 
                 {/* View more hint */}
                 <ScrollReveal delay={0.4}>
