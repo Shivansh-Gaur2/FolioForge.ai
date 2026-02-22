@@ -45,7 +45,63 @@ const socialLinks = [
     },
 ];
 
-export const ContactSection = () => {
+/* ── Reusable sub-components ── */
+const ContactLinksCard = ({ centered }) => (
+    <div className={`bg-white dark:bg-slate-800/50 rounded-3xl p-8
+                   border border-slate-100 dark:border-slate-700/50
+                   shadow-xl shadow-slate-200/50 dark:shadow-black/30
+                   ${centered ? 'text-center' : ''}`}>
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
+            Quick Connect
+        </h3>
+        <p className="text-slate-600 dark:text-slate-400 mb-6">
+            Prefer a quick chat? Reach out through any of these platforms.
+        </p>
+        <div className={`grid grid-cols-2 gap-4 ${centered ? 'max-w-md mx-auto' : ''}`}>
+            {socialLinks.map((link, idx) => (
+                <motion.a
+                    key={link.name}
+                    href={link.url}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    whileHover={{ scale: 1.05, y: -2 }}
+                    className={`flex items-center gap-3 p-4 rounded-xl
+                              bg-slate-50 dark:bg-slate-900/50
+                              border border-slate-100 dark:border-slate-700
+                              text-slate-600 dark:text-slate-400
+                              transition-all duration-300 ${link.color}`}
+                >
+                    {link.icon}
+                    <span className="font-medium">{link.name}</span>
+                </motion.a>
+            ))}
+        </div>
+    </div>
+);
+
+const AvailabilityBadge = () => (
+    <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-br from-emerald-500 to-teal-600 
+                 rounded-3xl p-8 text-white"
+    >
+        <div className="flex items-center gap-3 mb-4">
+            <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
+            </span>
+            <span className="font-semibold">Currently Available</span>
+        </div>
+        <p className="text-emerald-100">
+            I'm open to new opportunities and exciting projects. 
+            Let's create something amazing together!
+        </p>
+    </motion.div>
+);
+
+export const ContactSection = ({ variant = 'default' }) => {
     const [formData, setFormData] = useState({ name: '', email: '', message: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
@@ -90,190 +146,156 @@ export const ContactSection = () => {
                     </div>
                 </ScrollReveal>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                    {/* Contact form */}
-                    <ScrollReveal direction="left">
-                        <motion.div
-                            className="bg-white dark:bg-slate-800/50 rounded-3xl p-8
-                                     border border-slate-100 dark:border-slate-700/50
-                                     shadow-xl shadow-slate-200/50 dark:shadow-black/30"
-                        >
-                            {submitted ? (
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    className="text-center py-12"
-                                >
-                                    <div className="text-6xl mb-4">🎉</div>
-                                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                                        Message Sent!
-                                    </h3>
-                                    <p className="text-slate-500 dark:text-slate-400">
-                                        Thanks for reaching out. I'll get back to you soon!
-                                    </p>
-                                    <button
-                                        onClick={() => setSubmitted(false)}
-                                        className="mt-6 text-blue-600 dark:text-blue-400 font-medium"
-                                    >
-                                        Send another message
-                                    </button>
-                                </motion.div>
-                            ) : (
-                                <form onSubmit={handleSubmit} className="space-y-6">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                            Your Name
-                                        </label>
-                                        <input
-                                            type="text"
-                                            name="name"
-                                            value={formData.name}
-                                            onChange={handleChange}
-                                            required
-                                            className="w-full px-4 py-3 rounded-xl
-                                                     bg-slate-50 dark:bg-slate-900/50
-                                                     border border-slate-200 dark:border-slate-700
-                                                     text-slate-900 dark:text-white
-                                                     placeholder-slate-400
-                                                     focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                                                     transition-all"
-                                            placeholder="John Doe"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                            Email Address
-                                        </label>
-                                        <input
-                                            type="email"
-                                            name="email"
-                                            value={formData.email}
-                                            onChange={handleChange}
-                                            required
-                                            className="w-full px-4 py-3 rounded-xl
-                                                     bg-slate-50 dark:bg-slate-900/50
-                                                     border border-slate-200 dark:border-slate-700
-                                                     text-slate-900 dark:text-white
-                                                     placeholder-slate-400
-                                                     focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                                                     transition-all"
-                                            placeholder="john@example.com"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                            Message
-                                        </label>
-                                        <textarea
-                                            name="message"
-                                            value={formData.message}
-                                            onChange={handleChange}
-                                            required
-                                            rows={5}
-                                            className="w-full px-4 py-3 rounded-xl resize-none
-                                                     bg-slate-50 dark:bg-slate-900/50
-                                                     border border-slate-200 dark:border-slate-700
-                                                     text-slate-900 dark:text-white
-                                                     placeholder-slate-400
-                                                     focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                                                     transition-all"
-                                            placeholder="Tell me about your project..."
-                                        />
-                                    </div>
-
-                                    <motion.button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
-                                        className="w-full py-4 rounded-xl font-semibold
-                                                 bg-gradient-to-r from-blue-600 to-indigo-600
-                                                 hover:from-blue-500 hover:to-indigo-500
-                                                 text-white shadow-lg shadow-blue-500/25
-                                                 disabled:opacity-50 disabled:cursor-not-allowed
-                                                 transition-all duration-300"
-                                    >
-                                        {isSubmitting ? (
-                                            <span className="flex items-center justify-center gap-2">
-                                                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                                </svg>
-                                                Sending...
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center justify-center gap-2">
-                                                Send Message
-                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                                </svg>
-                                            </span>
-                                        )}
-                                    </motion.button>
-                                </form>
-                            )}
-                        </motion.div>
-                    </ScrollReveal>
-
-                    {/* Contact info */}
-                    <ScrollReveal direction="right">
-                        <div className="space-y-8">
-                            <div className="bg-white dark:bg-slate-800/50 rounded-3xl p-8
-                                          border border-slate-100 dark:border-slate-700/50
-                                          shadow-xl shadow-slate-200/50 dark:shadow-black/30">
-                                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
-                                    Quick Connect
-                                </h3>
-                                <p className="text-slate-600 dark:text-slate-400 mb-6">
-                                    Prefer a quick chat? Reach out through any of these platforms.
-                                </p>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    {socialLinks.map((link, idx) => (
-                                        <motion.a
-                                            key={link.name}
-                                            href={link.url}
-                                            initial={{ opacity: 0, y: 20 }}
-                                            whileInView={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: idx * 0.1 }}
-                                            whileHover={{ scale: 1.05, y: -2 }}
-                                            className={`flex items-center gap-3 p-4 rounded-xl
-                                                      bg-slate-50 dark:bg-slate-900/50
-                                                      border border-slate-100 dark:border-slate-700
-                                                      text-slate-600 dark:text-slate-400
-                                                      transition-all duration-300 ${link.color}`}
-                                        >
-                                            {link.icon}
-                                            <span className="font-medium">{link.name}</span>
-                                        </motion.a>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Availability status */}
+                {/* ── Default: form + links side by side ── */}
+                {variant === 'default' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                        {/* Contact form */}
+                        <ScrollReveal direction="left">
                             <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                className="bg-gradient-to-br from-emerald-500 to-teal-600 
-                                         rounded-3xl p-8 text-white"
+                                className="bg-white dark:bg-slate-800/50 rounded-3xl p-8
+                                         border border-slate-100 dark:border-slate-700/50
+                                         shadow-xl shadow-slate-200/50 dark:shadow-black/30"
                             >
-                                <div className="flex items-center gap-3 mb-4">
-                                    <span className="relative flex h-3 w-3">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-white"></span>
-                                    </span>
-                                    <span className="font-semibold">Currently Available</span>
-                                </div>
-                                <p className="text-emerald-100">
-                                    I'm open to new opportunities and exciting projects. 
-                                    Let's create something amazing together!
-                                </p>
+                                {submitted ? (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="text-center py-12"
+                                    >
+                                        <div className="text-6xl mb-4">🎉</div>
+                                        <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                                            Message Sent!
+                                        </h3>
+                                        <p className="text-slate-500 dark:text-slate-400">
+                                            Thanks for reaching out. I'll get back to you soon!
+                                        </p>
+                                        <button
+                                            onClick={() => setSubmitted(false)}
+                                            className="mt-6 text-blue-600 dark:text-blue-400 font-medium"
+                                        >
+                                            Send another message
+                                        </button>
+                                    </motion.div>
+                                ) : (
+                                    <form onSubmit={handleSubmit} className="space-y-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Your Name
+                                            </label>
+                                            <input
+                                                type="text"
+                                                name="name"
+                                                value={formData.name}
+                                                onChange={handleChange}
+                                                required
+                                                className="w-full px-4 py-3 rounded-xl
+                                                         bg-slate-50 dark:bg-slate-900/50
+                                                         border border-slate-200 dark:border-slate-700
+                                                         text-slate-900 dark:text-white
+                                                         placeholder-slate-400
+                                                         focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                                                         transition-all"
+                                                placeholder="John Doe"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Email Address
+                                            </label>
+                                            <input
+                                                type="email"
+                                                name="email"
+                                                value={formData.email}
+                                                onChange={handleChange}
+                                                required
+                                                className="w-full px-4 py-3 rounded-xl
+                                                         bg-slate-50 dark:bg-slate-900/50
+                                                         border border-slate-200 dark:border-slate-700
+                                                         text-slate-900 dark:text-white
+                                                         placeholder-slate-400
+                                                         focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                                                         transition-all"
+                                                placeholder="john@example.com"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Message
+                                            </label>
+                                            <textarea
+                                                name="message"
+                                                value={formData.message}
+                                                onChange={handleChange}
+                                                required
+                                                rows={5}
+                                                className="w-full px-4 py-3 rounded-xl resize-none
+                                                         bg-slate-50 dark:bg-slate-900/50
+                                                         border border-slate-200 dark:border-slate-700
+                                                         text-slate-900 dark:text-white
+                                                         placeholder-slate-400
+                                                         focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                                                         transition-all"
+                                                placeholder="Tell me about your project..."
+                                            />
+                                        </div>
+
+                                        <motion.button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            whileHover={{ scale: 1.02 }}
+                                            whileTap={{ scale: 0.98 }}
+                                            className="w-full py-4 rounded-xl font-semibold
+                                                     bg-gradient-to-r from-blue-600 to-indigo-600
+                                                     hover:from-blue-500 hover:to-indigo-500
+                                                     text-white shadow-lg shadow-blue-500/25
+                                                     disabled:opacity-50 disabled:cursor-not-allowed
+                                                     transition-all duration-300"
+                                        >
+                                            {isSubmitting ? (
+                                                <span className="flex items-center justify-center gap-2">
+                                                    <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                                    </svg>
+                                                    Sending...
+                                                </span>
+                                            ) : (
+                                                <span className="flex items-center justify-center gap-2">
+                                                    Send Message
+                                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                                    </svg>
+                                                </span>
+                                            )}
+                                        </motion.button>
+                                    </form>
+                                )}
                             </motion.div>
-                        </div>
-                    </ScrollReveal>
-                </div>
+                        </ScrollReveal>
+
+                        {/* Contact info */}
+                        <ScrollReveal direction="right">
+                            <div className="space-y-8">
+                                <ContactLinksCard />
+                                <AvailabilityBadge />
+                            </div>
+                        </ScrollReveal>
+                    </div>
+                )}
+
+                {/* ── Links Only: centred social links + availability ── */}
+                {variant === 'links' && (
+                    <div className="max-w-2xl mx-auto space-y-8">
+                        <ScrollReveal>
+                            <ContactLinksCard centered />
+                        </ScrollReveal>
+                        <ScrollReveal delay={0.15}>
+                            <AvailabilityBadge />
+                        </ScrollReveal>
+                    </div>
+                )}
             </div>
         </section>
     );

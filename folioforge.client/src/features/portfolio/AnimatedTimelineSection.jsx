@@ -80,7 +80,75 @@ const TimelineItem = ({ item, isLeft }) => {
     );
 };
 
-export const AnimatedTimelineSection = ({ content }) => {
+/* ── Card variant ── */
+const TimelineCard = ({ item, index }) => {
+    const [ref, inView] = useInView({ threshold: 0.2, triggerOnce: true });
+
+    return (
+        <motion.div
+            ref={ref}
+            initial={{ opacity: 0, y: 30 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.5, delay: index * 0.1 }}
+            whileHover={{ y: -6 }}
+            className="relative p-6 rounded-2xl
+                     bg-white dark:bg-slate-800/80
+                     border border-slate-100 dark:border-slate-700/50
+                     shadow-xl shadow-slate-200/50 dark:shadow-black/20
+                     hover:shadow-2xl transition-shadow duration-500"
+        >
+            <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl
+                           bg-gradient-to-r from-purple-500 to-blue-500" />
+            <div className="flex items-center gap-3 mb-4">
+                <span className="flex items-center justify-center w-10 h-10 rounded-xl
+                               bg-gradient-to-br from-purple-500 to-blue-600
+                               text-white text-lg font-bold shadow-lg">
+                    {item.Company?.charAt(0) || '?'}
+                </span>
+                <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
+                        {item.Role}
+                    </h3>
+                    <p className="text-sm text-purple-600 dark:text-purple-400 font-semibold">
+                        {item.Company}
+                    </p>
+                </div>
+            </div>
+            <SmartContent content={item.Points || item.Description} variant="timeline" />
+        </motion.div>
+    );
+};
+
+/* ── Minimal variant ── */
+const TimelineMinimal = ({ item, index }) => {
+    const [ref, inView] = useInView({ threshold: 0.3, triggerOnce: true });
+
+    return (
+        <motion.div
+            ref={ref}
+            initial={{ opacity: 0, x: -16 }}
+            animate={inView ? { opacity: 1, x: 0 } : {}}
+            transition={{ duration: 0.4, delay: index * 0.08 }}
+            className="flex gap-4 items-start group"
+        >
+            <div className="flex flex-col items-center pt-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-purple-500 group-hover:scale-150 transition-transform" />
+                <div className="w-px flex-1 bg-slate-200 dark:bg-slate-700 mt-2" />
+            </div>
+            <div className="pb-8">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white leading-snug">
+                    {item.Role}
+                </h3>
+                <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mb-2">
+                    {item.Company}
+                </p>
+                <SmartContent content={item.Points || item.Description} variant="timeline" />
+            </div>
+        </motion.div>
+    );
+};
+
+export const AnimatedTimelineSection = ({ content, variant = 'default' }) => {
     let items = [];
     try {
         const parsed = JSON.parse(content);
@@ -118,24 +186,42 @@ export const AnimatedTimelineSection = ({ content }) => {
                     </div>
                 </ScrollReveal>
 
-                {/* Timeline */}
-                <div className="relative">
-                    {/* Center line */}
-                    <div className="absolute left-1/2 top-0 bottom-0 w-0.5 
-                                  bg-gradient-to-b from-purple-500 via-blue-500 to-purple-500
-                                  hidden md:block" />
+                {/* ── Default: alternating timeline ── */}
+                {variant === 'default' && (
+                    <div className="relative">
+                        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 
+                                      bg-gradient-to-b from-purple-500 via-blue-500 to-purple-500
+                                      hidden md:block" />
+                        <div className="space-y-12 md:space-y-24">
+                            {items.map((item, index) => (
+                                <TimelineItem
+                                    key={index}
+                                    item={item}
+                                    index={index}
+                                    isLeft={index % 2 === 0}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
 
-                    <div className="space-y-12 md:space-y-24">
+                {/* ── Card: grid of cards ── */}
+                {variant === 'card' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {items.map((item, index) => (
-                            <TimelineItem
-                                key={index}
-                                item={item}
-                                index={index}
-                                isLeft={index % 2 === 0}
-                            />
+                            <TimelineCard key={index} item={item} index={index} />
                         ))}
                     </div>
-                </div>
+                )}
+
+                {/* ── Minimal: compact list ── */}
+                {variant === 'minimal' && (
+                    <div className="max-w-2xl mx-auto">
+                        {items.map((item, index) => (
+                            <TimelineMinimal key={index} item={item} index={index} />
+                        ))}
+                    </div>
+                )}
             </div>
         </section>
     );
