@@ -25,7 +25,7 @@ FolioForge.Application/
 ├── Commands/
 │   └── CreatePortfolio/
 │       ├── CreatePortfolioCommand.cs        # Command definition
-│       └── CreatePortfolioCommandHandler.cs # Command handler
+│       └── CreatePortfolioCommandHandler.cs # Command handler (uses ITenantContext)
 ├── Portfolios/
 │   └── Queries/
 │       ├── GetPortfolioByIdQuery.cs         # Query definition
@@ -35,10 +35,14 @@ FolioForge.Application/
 │   │   └── ResumeUploadedEvent.cs           # Domain events
 │   └── Interfaces/
 │       ├── IAiService.cs                    # AI service contract
-│       ├── IApplicationDbContext.cs         # DbContext contract
-│       └── IPdfService.cs                   # PDF service contract
+│       ├── IApplicationDbContext.cs         # DbContext contract (4 DbSets)
+│       ├── IAuthService.cs                  # JWT token generation contract
+│       ├── IPdfService.cs                   # PDF extraction contract
+│       ├── ITenantContext.cs                # Scoped tenant context
+│       ├── ITenantRepository.cs             # Tenant data access contract
+│       └── IUserRepository.cs              # User data access contract
 ├── DTOs/
-│   ├── PortfolioDto.cs                      # Portfolio response DTO
+│   ├── PortfolioDto.cs                      # Portfolio + Theme DTOs
 │   └── PortfolioSectionDto.cs               # Section response DTO
 └── FolioForge.Application.csproj
 ```
@@ -100,26 +104,33 @@ public record CreatePortfolioCommand(
 public class CreatePortfolioCommandHandler : IRequestHandler<CreatePortfolioCommand, Result<Guid>>
 {
     private readonly IPortfolioRepository _repository;
+    private readonly ITenantContext _tenantContext;
 
-    public CreatePortfolioCommandHandler(IPortfolioRepository repository)
+    public CreatePortfolioCommandHandler(IPortfolioRepository repository, ITenantContext tenantContext)
     {
         _repository = repository;
+        _tenantContext = tenantContext;
     }
 
     public async Task<Result<Guid>> Handle(CreatePortfolioCommand request, CancellationToken ct)
     {
-        // 1. Business Rule: Check slug uniqueness
+        // 1. Business Rule: Check slug uniqueness (within tenant scope)
         var existing = await _repository.GetBySlugAsync(request.DesiredSlug);
         if (existing != null)
         {
             return Result<Guid>.Failure($"The URL '{request.DesiredSlug}' is already taken.");
         }
 
-        // 2. Create domain entity
-        var portfolio = new Portfolio(request.UserId, request.DesiredSlug, request.Title);
+        // 2. Create domain entity with tenant context
+        var portfolio = new Portfolio(
+            request.UserId, 
+            _tenantContext.TenantId,  // Auto-injected from middleware
+            request.DesiredSlug, 
+            request.Title
+        );
 
         // 3. Add default section
-        var defaultBio = new { text = "Welcome to my portfolio!" };
+        var defaultBio = new { text = "Welcome to my portfolio! I am a software engineer..." };
         portfolio.AddSection(PortfolioSection.Create("Markdown", 0, defaultBio));
 
         // 4. Persist
@@ -135,6 +146,7 @@ public class CreatePortfolioCommandHandler : IRequestHandler<CreatePortfolioComm
 **Key Points:**
 - Uses `Result<T>` pattern for explicit success/failure handling
 - Validates business rules before creating entity
+- Injects `ITenantContext` to auto-assign TenantId from the current request scope
 - Adds default section for new portfolios
 - Repository handles persistence details
 
@@ -283,11 +295,76 @@ Exposes DbSets for queries to consume:
 ```csharp
 public interface IApplicationDbContext
 {
+    DbSet<Tenant> Tenants { get; }
+    DbSet<User> Users { get; }
     DbSet<Portfolio> Portfolios { get; }
     DbSet<PortfolioSection> Sections { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
 ```
+
+### IAuthService
+
+JWT token generation contract:
+
+```csharp
+public interface IAuthService
+{
+    /// <summary>
+    /// Generates a JWT containing userId, tenantId, email, and fullName claims.
+    /// </summary>
+    string GenerateToken(Guid userId, Guid tenantId, string email, string fullName);
+}
+```
+
+**Implementation:** `JwtAuthService` in Infrastructure layer.
+
+### ITenantContext
+
+Scoped service providing the current tenant for each request:
+
+```csharp
+public interface ITenantContext
+{
+    Guid TenantId { get; }
+    string TenantIdentifier { get; }
+    bool IsResolved { get; }
+    void SetTenant(Guid tenantId, string identifier);
+}
+```
+
+**Purpose:** Set by `TenantMiddleware`, consumed by handlers and the `SaveChangesAsync` override to auto-assign `TenantId` on tenant entities.
+
+### ITenantRepository
+
+```csharp
+public interface ITenantRepository
+{
+    Task<Tenant?> GetByIdentifierAsync(string identifier);
+    Task<Tenant?> GetByIdAsync(Guid id);
+    Task AddAsync(Tenant tenant);
+    Task SaveChangesAsync();
+}
+```
+
+### IUserRepository
+
+```csharp
+public interface IUserRepository
+{
+    Task<User?> GetByIdAsync(Guid id);
+    Task<User?> GetByEmailAsync(string email);
+    /// <summary>
+    /// Check if email exists across ALL tenants (bypasses query filters).
+    /// Used during registration to prevent duplicate emails globally.
+    /// </summary>
+    Task<bool> EmailExistsGloballyAsync(string email);
+    Task AddAsync(User user);
+    Task SaveChangesAsync();
+}
+```
+
+**Note:** `GetByEmailAsync` and `EmailExistsGloballyAsync` both bypass tenant query filters using `IgnoreQueryFilters()` — login and registration are cross-tenant operations.
 
 ---
 

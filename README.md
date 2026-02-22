@@ -1,11 +1,12 @@
 # FolioForge.ai 🚀
 
-> **The Intelligent, Event-Driven Portfolio Platform**
-> 
-> Transform static PDF resumes into dynamic, deployable personal websites in seconds using AI-powered parsing and a flexible widget system.
+> **The Intelligent, Multi-Tenant, Event-Driven Portfolio Platform**
+>
+> Transform static PDF resumes into dynamic, deployable personal websites in seconds using AI-powered parsing, multi-tenant isolation, and a flexible widget system.
 
 [![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
+[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.x-FF6600?logo=rabbitmq)](https://www.rabbitmq.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -18,9 +19,9 @@
 
 - **Static site generators** require manual configuration and technical expertise
 - **Traditional resume builders** are rigid and template-locked
-- **Portfolio hosting** lacks flexibility and modern design systems
+- **Portfolio hosting** lacks flexibility, multi-tenancy, and modern design systems
 
-**FolioForge.ai** uses a **Generic Widget System** (inspired by Notion blocks) that decouples data from presentation, enabling infinite customization without database migrations.
+**FolioForge.ai** uses a **Generic Widget System** (inspired by Notion blocks) that decouples data from presentation, enabling infinite customization without database migrations. Each tenant operates in complete data isolation, and JWT-based authentication ensures secure access.
 
 ---
 
@@ -32,41 +33,42 @@ Built on **Clean Architecture** principles with a **CQRS-inspired** flow using M
 
 ```mermaid
 graph TB
-    subgraph "Frontend - React + Vite"
-        A[React SPA] --> B[API Client]
-        B --> C[Portfolio Service]
+    subgraph "Frontend - React 19 + Vite 7"
+        A[React SPA] --> B[Axios Client]
+        B --> C[Auth / Portfolio Services]
     end
-    
+
     subgraph "Backend API - .NET 9"
-        D[PortfoliosController] --> E[MediatR]
-        E --> F[Commands/Queries]
-        F --> G[Repositories]
+        D[Controllers] --> E[TenantMiddleware]
+        E --> F[JWT Auth]
+        F --> G[MediatR CQRS]
+        G --> H[Repositories]
     end
-    
+
     subgraph "Message Queue"
-        H[RabbitMQ]
+        I[RabbitMQ]
     end
-    
+
     subgraph "Background Worker"
-        I[Worker Service] --> J[PDF Extraction]
-        J --> K[AI Processing]
-        K --> L[Section Generation]
+        J[Worker Service] --> K[PDF Extraction]
+        K --> L[AI Processing]
+        L --> M[Section Generation]
     end
-    
+
     subgraph "AI Services"
-        M[Groq AI / OpenAI / Gemini]
+        N[Groq / Gemini / OpenAI]
     end
-    
+
     subgraph "Database"
-        N[(SQL Server)]
+        O[(SQL Server)]
     end
-    
+
     C --> D
-    D --> H
-    H --> I
-    K --> M
-    G --> N
+    D --> I
+    I --> J
     L --> N
+    H --> O
+    M --> O
 ```
 
 ### Event-Driven Resume Processing Flow
@@ -79,19 +81,41 @@ sequenceDiagram
     participant Worker
     participant AI
     participant DB
-    
+
     User->>API: POST /portfolios/{id}/upload-resume
     API->>API: Save PDF to disk
     API->>RabbitMQ: Publish ResumeUploadedEvent
     API-->>User: 202 Accepted
-    
+
     RabbitMQ->>Worker: Consume message
     Worker->>Worker: Extract PDF text (PdfPig)
     Worker->>AI: Generate portfolio data
     AI-->>Worker: Structured JSON
     Worker->>DB: Delete old sections
-    Worker->>DB: Insert new sections
+    Worker->>DB: Insert new sections (About, Skills, Timeline, Projects)
     Worker->>Worker: Log success
+```
+
+### Multi-Tenant Architecture
+
+```mermaid
+graph LR
+    subgraph "Tenant Resolution"
+        A[Incoming Request] --> B{Has JWT?}
+        B -->|Yes| C[Extract tenantId claim]
+        B -->|No| D{X-Tenant-Id header?}
+        D -->|Yes| E[Lookup by identifier]
+        D -->|No| F[400 Bad Request]
+    end
+
+    subgraph "Data Isolation"
+        G[EF Core Global Query Filters]
+        G --> H[Portfolio.TenantId == Current]
+        G --> I[User.TenantId == Current]
+    end
+
+    C --> G
+    E --> G
 ```
 
 ---
@@ -100,35 +124,39 @@ sequenceDiagram
 
 ### Backend
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Framework** | .NET 9 | Modern web API with Controllers |
-| **Architecture** | Clean Architecture + CQRS | Separation of concerns, testability |
-| **Database** | SQL Server | Relational data with JSON column support |
-| **ORM** | Entity Framework Core 9 | Type-safe database access |
-| **Messaging** | RabbitMQ | Async job processing |
-| **PDF Parsing** | PdfPig | Extract text from resume PDFs |
-| **AI/LLM** | Groq (Llama 3.3), OpenAI, Gemini | Resume parsing & content generation |
-| **CQRS** | MediatR | Command/Query separation |
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| **Framework** | .NET | 9.0 | Modern web API with Controllers |
+| **Architecture** | Clean Architecture + CQRS | — | Separation of concerns, testability |
+| **Database** | SQL Server | — | Relational data with JSON column support |
+| **ORM** | Entity Framework Core | 9.0 | Type-safe database access with global query filters |
+| **Authentication** | JWT Bearer | — | Stateless token-based auth with BCrypt password hashing |
+| **Messaging** | RabbitMQ | 3.x | Async job processing via event-driven architecture |
+| **PDF Parsing** | PdfPig | — | Extract text from resume PDFs |
+| **AI/LLM** | Groq (Llama 3.3), Gemini 2.0, OpenAI | — | Resume parsing & content generation |
+| **CQRS** | MediatR | 14.x | Command/Query separation |
 
 ### Frontend
 
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| **Framework** | React | 19.2 | Modern SPA with hooks |
+| **Build Tool** | Vite | 7.3 | Fast HMR, optimized builds |
+| **Styling** | Tailwind CSS | 3.4 | Utility-first CSS framework |
+| **Animations** | Framer Motion | 12.x | Scroll-triggered transitions, particle effects |
+| **HTTP Client** | Axios | 1.13 | Interceptor-based API communication with JWT injection |
+| **Routing** | React Router | 7.13 | Client-side routing with protected routes |
+| **Particles** | tsParticles | 3.x | Interactive particle hero background |
+| **Theming** | Context API | — | Dark/Light mode support with system preference detection |
+
+### DevOps & CI/CD
+
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Framework** | React 19 + Vite | Modern SPA with HMR |
-| **Styling** | Tailwind CSS 4 | Utility-first CSS framework |
-| **Animations** | Framer Motion | Stunning transitions & animations |
-| **HTTP Client** | Axios | API communication |
-| **State** | React Hooks | Local component state |
-| **Theming** | Context API | Dark/Light mode support |
-
-### Infrastructure
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Message Broker** | RabbitMQ | Event-driven processing |
-| **Background Jobs** | .NET Worker Service | Long-running message consumer |
-| **API Docs** | Swagger/OpenAPI | Interactive API documentation |
+| **CI** | GitHub Actions | Automated build, lint, test on push/PR |
+| **PR Checks** | GitHub Actions + dorny/paths-filter | Smart path-based checks (only run what changed) |
+| **Deployment** | GitHub Actions | Artifact build pipeline (API, Worker, Frontend) |
+| **Linting** | ESLint 9 | React hooks, refresh, and JSX variable rules |
 
 ---
 
@@ -136,23 +164,31 @@ sequenceDiagram
 
 ```
 FolioForge.ai/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                        # 🔄 CI — build + lint + test
+│       ├── deploy.yml                    # 🚀 Deploy — artifact build pipeline
+│       └── pr-checks.yml                # ✅ PR — smart path-filtered checks
+│
 ├── backend/
-│   ├── FolioForge.sln                    # Solution file
+│   ├── FolioForge.sln                    # Solution file (5 projects)
 │   └── src/
-│       ├── FolioForge.Api/               # 🌐 API Layer (Controllers, DI)
-│       ├── FolioForge.Application/       # 📋 Application Layer (CQRS, DTOs)
-│       ├── FolioForge.Domain/            # 💎 Domain Layer (Entities, Interfaces)
-│       ├── FolioForge.Infrastructure/    # 🔧 Infrastructure (EF Core, Services)
-│       └── FolioForge.Worker/            # ⚙️ Background Worker (RabbitMQ Consumer)
+│       ├── FolioForge.Api/               # 🌐 API Layer (Controllers, Auth, Middleware)
+│       ├── FolioForge.Application/       # 📋 Application Layer (CQRS, DTOs, Interfaces)
+│       ├── FolioForge.Domain/            # 💎 Domain Layer (Entities, Tenant model)
+│       ├── FolioForge.Infrastructure/    # 🔧 Infrastructure (EF Core, AI, RabbitMQ, JWT)
+│       └── FolioForge.Worker/            # ⚙️ Background Worker (Resume processing)
 │
 └── folioforge.client/                    # ⚛️ React Frontend
     └── src/
-        ├── api/                          # API client & error handling
-        ├── components/                   # Reusable UI components
-        ├── features/                     # Feature-specific components
-        ├── hooks/                        # Custom React hooks
-        ├── pages/                        # Page components
-        └── services/                     # API service layer
+        ├── api/                          # Axios client with JWT/tenant interceptors
+        ├── components/                   # Reusable UI (animations, layout, theme)
+        ├── config/                       # Environment configuration
+        ├── context/                      # AuthContext, ThemeContext providers
+        ├── features/                     # Portfolio sections (Hero, Skills, Timeline, etc.)
+        ├── hooks/                        # Custom React hooks (usePortfolio)
+        ├── pages/                        # Login, Register, Dashboard, Portfolio
+        └── services/                     # Auth & Portfolio API services
 ```
 
 > 📚 **Each layer has its own README** with detailed documentation. See the respective folders.
@@ -165,26 +201,76 @@ FolioForge.ai/
 
 | Feature | Description |
 |---------|-------------|
+| **Multi-Tenancy** | Shared-database, row-level tenant isolation via EF Core global query filters |
+| **JWT Authentication** | Register, Login, /me endpoints with BCrypt hashing and 24h token expiry |
+| **Tenant Middleware** | Automatic tenant resolution from JWT claims or X-Tenant-Id header |
 | **Clean Architecture** | 4-layer separation (API, Application, Domain, Infrastructure) |
 | **CQRS with MediatR** | Command/Query separation for portfolio operations |
 | **Event-Driven Processing** | RabbitMQ-based async resume processing |
-| **AI-Powered Parsing** | Groq (Llama 3.3), OpenAI, Gemini integration |
+| **AI-Powered Parsing** | Groq (Llama 3.3), Gemini 2.0 Flash, OpenAI integration |
 | **PDF Text Extraction** | PdfPig-based resume text extraction |
-| **Generic Widget System** | Flexible JSON-based section storage |
-| **Smart Bullet Points** | AI extracts achievements as structured arrays |
-| **React Portfolio Viewer** | Animated, responsive portfolio display |
-| **Dark/Light Theme** | System-aware theme switching |
-| **Particle Hero Animation** | Interactive particle background |
-| **Animated Sections** | Framer Motion-powered scroll animations |
+| **Generic Widget System** | Flexible JSON-based section storage (About, Skills, Timeline, Projects) |
+| **Smart Bullet Points** | AI extracts achievements as structured arrays, not paragraphs |
+| **Protected Routes** | Frontend route guards with auth bootstrapping from localStorage |
+| **React Portfolio Viewer** | Animated, responsive portfolio display with scroll-triggered reveals |
+| **Dark/Light Theme** | System-aware theme switching with localStorage persistence |
+| **Particle Hero** | Interactive tsParticles background with gradient text |
+| **Animated Sections** | Framer Motion scroll animations (fade-in, slide, stagger) |
+| **CI/CD Pipelines** | GitHub Actions for CI, PR checks (path-filtered), and deployment |
 
 ### 🔜 Planned
 
-- [ ] User authentication (JWT)
-- [ ] Multi-tenancy with subdomain routing
 - [ ] Drag-and-drop section editor
 - [ ] Custom domain support
-- [ ] PDF resume download
+- [ ] PDF resume download from portfolio
 - [ ] Analytics dashboard
+- [ ] Role-based access control (RBAC)
+- [ ] Subdomain-based tenant routing
+
+---
+
+## 🔐 Authentication & Multi-Tenancy
+
+### Authentication Flow
+
+```
+Register → POST /api/auth/register { email, fullName, password, tenantIdentifier }
+                ↓
+         Validate tenant exists & is active
+         Check email globally unique
+         BCrypt hash password
+         Create User with TenantId
+         Generate JWT (sub, email, fullName, tenantId)
+                ↓
+         ← { token, userId, email, fullName, tenantId, tenantIdentifier }
+
+Login → POST /api/auth/login { email, password }
+                ↓
+         Lookup user across all tenants (bypasses query filters)
+         Verify BCrypt hash
+         Resolve tenant from user's TenantId
+         Generate JWT
+                ↓
+         ← { token, userId, email, fullName, tenantId, tenantIdentifier }
+```
+
+### Tenant Data Isolation
+
+- **Strategy:** Shared database with `TenantId` column on `Portfolio` and `User` entities
+- **Enforcement:** EF Core global query filters automatically scope all queries
+- **Resolution:** JWT `tenantId` claim (primary) → `X-Tenant-Id` header (fallback)
+- **Excluded routes:** `/api/auth/*`, `/api/tenants/*`, `/swagger/*`, `/health`
+
+### JWT Token Claims
+
+| Claim | Description |
+|-------|-------------|
+| `sub` | User ID (GUID) |
+| `email` | User email address |
+| `fullName` | User display name |
+| `tenantId` | Tenant ID for data isolation |
+| `jti` | Unique token identifier |
+| `exp` | Expiration (24 hours) |
 
 ---
 
@@ -193,8 +279,8 @@ FolioForge.ai/
 ### Prerequisites
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download)
-- [Node.js 20+](https://nodejs.org/)
-- [SQL Server](https://www.microsoft.com/sql-server) or [Docker](https://www.docker.com/)
+- [Node.js 22+](https://nodejs.org/)
+- [SQL Server](https://www.microsoft.com/sql-server) (or LocalDB / Docker)
 - [RabbitMQ](https://www.rabbitmq.com/) (or Docker)
 
 ### Quick Start
@@ -230,7 +316,13 @@ Update `backend/src/FolioForge.Api/appsettings.json`:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=folioforge_db;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;"
+    "DefaultConnection": "Server=localhost;Database=folioforge;Integrated Security=True;TrustServerCertificate=True"
+  },
+  "Jwt": {
+    "Secret": "YourSuperSecretKeyAtLeast32CharsLong!!",
+    "Issuer": "FolioForge",
+    "Audience": "FolioForge.Client",
+    "ExpirationMinutes": "1440"
   },
   "Groq": {
     "ApiKey": "your-groq-api-key"
@@ -242,17 +334,17 @@ Update `backend/src/FolioForge.Api/appsettings.json`:
 
 ```bash
 cd backend/src/FolioForge.Api
-dotnet ef database update
+dotnet ef database update --project ../FolioForge.Infrastructure/FolioForge.Infrastructure.csproj
 ```
 
 #### 5. Start Backend Services
 
 ```bash
-# Terminal 1: Start API
+# Terminal 1: Start API (http://localhost:5090)
 cd backend/src/FolioForge.Api
 dotnet run
 
-# Terminal 2: Start Worker
+# Terminal 2: Start Worker (resume processing)
 cd backend/src/FolioForge.Worker
 dotnet run
 ```
@@ -267,36 +359,74 @@ npm run dev
 
 #### 7. Access the Application
 
-- **Frontend:** http://localhost:5173
-- **API Swagger:** http://localhost:5000
-- **RabbitMQ Dashboard:** http://localhost:15672 (guest/guest)
+| Service | URL |
+|---------|-----|
+| **Frontend** | http://localhost:5173 |
+| **API Swagger** | http://localhost:5090/swagger |
+| **RabbitMQ Dashboard** | http://localhost:15672 (guest/guest) |
+
+#### 8. Create a Tenant & User
+
+```bash
+# Create a tenant
+curl -X POST http://localhost:5090/api/tenants \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Workspace", "identifier": "my-workspace"}'
+
+# Register a user
+curl -X POST http://localhost:5090/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@email.com", "fullName": "Your Name", "password": "SecurePass123", "tenantIdentifier": "my-workspace"}'
+```
 
 ---
 
 ## 🔄 API Endpoints
 
+### Authentication
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/auth/register` | — | Register user under a tenant |
+| `POST` | `/api/auth/login` | — | Login with email/password |
+| `GET` | `/api/auth/me` | JWT | Get current user profile |
+
+### Tenant Management
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/tenants` | — | Create a new tenant/workspace |
+| `GET` | `/api/tenants/{id}` | — | Get tenant details by ID |
+
 ### Portfolio Management
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/portfolios` | Create new portfolio |
-| `GET` | `/api/portfolios/{id}` | Get portfolio by ID (with sections) |
-| `GET` | `/api/portfolios/{slug}` | Get portfolio by slug |
-| `POST` | `/api/portfolios/{id}/upload-resume` | Upload PDF resume for AI processing |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/portfolios` | JWT | Create new portfolio |
+| `GET` | `/api/portfolios/{id}` | JWT | Get portfolio by ID (with sections) |
+| `GET` | `/api/portfolios/{slug}` | JWT | Get portfolio by slug |
+| `POST` | `/api/portfolios/{id}/upload-resume` | JWT | Upload PDF resume for AI processing |
 
 ### Request/Response Examples
 
-**Create Portfolio:**
+**Register:**
 ```bash
-curl -X POST http://localhost:5000/api/portfolios \
+curl -X POST http://localhost:5090/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"title": "John Doe Portfolio", "slug": "john-doe"}'
+  -d '{"email": "john@example.com", "fullName": "John Doe", "password": "Password123!", "tenantIdentifier": "my-workspace"}'
+
+# Response:
+# { "token": "eyJ...", "userId": "...", "email": "john@example.com",
+#   "fullName": "John Doe", "tenantId": "...", "tenantIdentifier": "my-workspace" }
 ```
 
 **Upload Resume:**
 ```bash
-curl -X POST http://localhost:5000/api/portfolios/{id}/upload-resume \
+curl -X POST http://localhost:5090/api/portfolios/{id}/upload-resume \
+  -H "Authorization: Bearer <token>" \
   -F "file=@resume.pdf"
+
+# Response: 202 Accepted (processing happens async via RabbitMQ)
 ```
 
 ---
@@ -308,25 +438,25 @@ curl -X POST http://localhost:5000/api/portfolios/{id}/upload-resume \
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    API Layer                         │
-│         (Controllers, Middleware, DI Setup)          │
+│   (Controllers, Auth, Middleware, Swagger, DI)       │
 └─────────────────────┬───────────────────────────────┘
                       │ depends on
                       ▼
 ┌─────────────────────────────────────────────────────┐
 │               Application Layer                      │
-│    (Commands, Queries, Handlers, DTOs, Interfaces)   │
+│  (Commands, Queries, Handlers, DTOs, Interfaces)     │
 └─────────────────────┬───────────────────────────────┘
                       │ depends on
                       ▼
 ┌─────────────────────────────────────────────────────┐
 │                  Domain Layer                        │
-│      (Entities, Value Objects, Domain Events)        │
+│   (Entities, Value Objects, Tenant Interfaces)       │
 └─────────────────────────────────────────────────────┘
                       ▲
                       │ implements interfaces from
 ┌─────────────────────┴───────────────────────────────┐
 │              Infrastructure Layer                    │
-│  (EF Core, Repositories, AI Services, RabbitMQ)      │
+│  (EF Core, JWT, Repositories, AI, RabbitMQ, PDF)     │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -335,37 +465,62 @@ curl -X POST http://localhost:5000/api/portfolios/{id}/upload-resume \
 | Pattern | Usage |
 |---------|-------|
 | **Repository Pattern** | Abstract data access behind interfaces |
-| **CQRS** | Separate read (queries) from write (commands) |
-| **Mediator Pattern** | Decouple request handling via MediatR |
-| **Factory Pattern** | Create PortfolioSection with `Create()` |
-| **Result Pattern** | Type-safe success/failure handling |
-| **Event-Driven** | Async processing via RabbitMQ |
+| **CQRS** | Separate read (queries) from write (commands) via MediatR |
+| **Mediator Pattern** | Decouple request handling with `IRequest`/`IRequestHandler` |
+| **Factory Pattern** | Create PortfolioSection with `Create()` static method |
+| **Result Pattern** | Type-safe success/failure handling without exceptions |
+| **Event-Driven** | Async resume processing via RabbitMQ publish/subscribe |
+| **Global Query Filters** | Automatic tenant scoping at the ORM level |
+| **Marker Interface** | `ITenantEntity` for polymorphic tenant assignment in `SaveChangesAsync` |
 
 ---
 
 ## 📊 Database Schema
 
 ```sql
--- Portfolios Table
-CREATE TABLE Portfolios (
+-- Tenants Table
+CREATE TABLE tenants (
     Id UNIQUEIDENTIFIER PRIMARY KEY,
-    UserId UNIQUEIDENTIFIER NOT NULL,
-    Slug NVARCHAR(50) NOT NULL UNIQUE,
-    Title NVARCHAR(100) NOT NULL,
-    IsPublished BIT NOT NULL DEFAULT 1,
-    Theme NVARCHAR(MAX) NOT NULL,  -- JSON as string
+    Name NVARCHAR(100) NOT NULL,
+    Identifier NVARCHAR(50) NOT NULL UNIQUE,  -- URL-friendly slug
+    IsActive BIT NOT NULL DEFAULT 1,
     CreatedAt DATETIME2 NOT NULL,
     UpdatedAt DATETIME2 NOT NULL
 );
 
--- Portfolio Sections Table (Generic Widget Storage)
-CREATE TABLE Sections (
+-- Users Table
+CREATE TABLE users (
     Id UNIQUEIDENTIFIER PRIMARY KEY,
-    PortfolioId UNIQUEIDENTIFIER NOT NULL REFERENCES Portfolios(Id),
-    SectionType NVARCHAR(50) NOT NULL,  -- 'About', 'Skills', 'Timeline', 'Projects'
+    Email NVARCHAR(256) NOT NULL UNIQUE,       -- Globally unique
+    FullName NVARCHAR(100) NOT NULL,
+    PasswordHash NVARCHAR(MAX) NOT NULL,       -- BCrypt hash
+    TenantId UNIQUEIDENTIFIER NOT NULL,        -- FK to tenants
+    CreatedAt DATETIME2 NOT NULL,
+    UpdatedAt DATETIME2 NOT NULL
+);
+
+-- Portfolios Table
+CREATE TABLE portfolios (
+    Id UNIQUEIDENTIFIER PRIMARY KEY,
+    UserId UNIQUEIDENTIFIER NOT NULL,
+    TenantId UNIQUEIDENTIFIER NOT NULL,        -- Row-level isolation
+    Slug NVARCHAR(50) NOT NULL,                -- Unique per tenant
+    Title NVARCHAR(100) NOT NULL,
+    IsPublished BIT NOT NULL DEFAULT 1,
+    Theme NVARCHAR(MAX) NOT NULL,              -- JSON: { Name, PrimaryColor, FontBody }
+    CreatedAt DATETIME2 NOT NULL,
+    UpdatedAt DATETIME2 NOT NULL,
+    UNIQUE(TenantId, Slug)                     -- Composite unique
+);
+
+-- Portfolio Sections Table (Generic Widget Storage)
+CREATE TABLE portfolio_sections (
+    Id UNIQUEIDENTIFIER PRIMARY KEY,
+    PortfolioId UNIQUEIDENTIFIER NOT NULL REFERENCES portfolios(Id) ON DELETE CASCADE,
+    SectionType NVARCHAR(50) NOT NULL,         -- 'About', 'Skills', 'Timeline', 'Projects'
     SortOrder INT NOT NULL DEFAULT 0,
     IsVisible BIT NOT NULL DEFAULT 1,
-    Content NVARCHAR(MAX) NOT NULL,  -- JSON content
+    Content NVARCHAR(MAX) NOT NULL,            -- JSON content blob
     CreatedAt DATETIME2 NOT NULL,
     UpdatedAt DATETIME2 NOT NULL
 );
@@ -373,14 +528,17 @@ CREATE TABLE Sections (
 
 ### JSON Content Examples
 
-**Skills Section:**
+**About Section:**
 ```json
-{
-  "items": ["C#", ".NET", "React", "TypeScript", "Azure", "Docker"]
-}
+{ "content": "Experienced full-stack engineer with 5+ years building scalable web applications." }
 ```
 
-**Experience Section (with Smart Bullet Points):**
+**Skills Section:**
+```json
+{ "items": ["C#", ".NET", "React", "TypeScript", "Azure", "Docker", "SQL Server"] }
+```
+
+**Experience Section (Structured Bullet Points):**
 ```json
 {
   "items": [
@@ -397,7 +555,7 @@ CREATE TABLE Sections (
 }
 ```
 
-**Projects Section (with Smart Bullet Points):**
+**Projects Section (Structured Bullet Points):**
 ```json
 {
   "items": [
@@ -428,12 +586,15 @@ CREATE TABLE Sections (
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation changes
-- `refactor:` Code refactoring
-- `test:` Adding tests
-- `chore:` Maintenance tasks
+| Prefix | Usage |
+|--------|-------|
+| `feat:` | New feature |
+| `fix:` | Bug fix |
+| `docs:` | Documentation changes |
+| `refactor:` | Code refactoring |
+| `test:` | Adding tests |
+| `chore:` | Maintenance tasks |
+| `ci:` | CI/CD changes |
 
 ---
 
@@ -445,7 +606,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 👨‍💻 Author
 
-**Shivansh**  
+**Shivansh**
 📧 [Contact](mailto:your.email@example.com) • 💼 [LinkedIn](#) • 🌐 [Portfolio](#)
 
 ---

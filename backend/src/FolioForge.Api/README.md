@@ -11,10 +11,12 @@ This is the outermost layer of the Clean Architecture, responsible for handling 
 | Responsibility | Description |
 |----------------|-------------|
 | **HTTP Handling** | Receive and respond to HTTP requests via ASP.NET Core Controllers |
+| **Authentication** | JWT Bearer token validation and user identity resolution |
+| **Tenant Resolution** | Middleware to resolve tenant from JWT or X-Tenant-Id header |
 | **Request Validation** | Validate incoming request DTOs (contracts) |
 | **Dependency Injection** | Configure and wire up all services at startup |
-| **Middleware Pipeline** | CORS, authentication, authorization, error handling |
-| **API Documentation** | Swagger/OpenAPI spec generation |
+| **Middleware Pipeline** | CORS, tenant resolution, authentication, authorization |
+| **API Documentation** | Swagger/OpenAPI spec with JWT security definitions |
 
 ---
 
@@ -23,14 +25,16 @@ This is the outermost layer of the Clean Architecture, responsible for handling 
 ```
 FolioForge.Api/
 ├── Controllers/
-│   └── PortfoliosController.cs    # Portfolio CRUD + Resume Upload
+│   ├── AuthController.cs          # Register, Login, Me endpoints
+│   ├── PortfoliosController.cs    # Portfolio CRUD + Resume Upload
+│   └── TenantsController.cs       # Tenant creation & lookup
 ├── Contracts/
 │   └── CreatePortfolioRequest.cs  # Request DTOs
 ├── Properties/
-│   └── launchSettings.json        # Development settings
+│   └── launchSettings.json        # Development settings (5090 HTTP)
 ├── Uploads/                       # Uploaded PDF storage
 ├── Program.cs                     # Application entry point & DI setup
-├── appsettings.json              # Production configuration
+├── appsettings.json              # Production configuration (JWT, DB, AI)
 └── appsettings.Development.json  # Development configuration
 ```
 
@@ -45,15 +49,87 @@ The `Program.cs` file serves as the composition root where all dependencies are 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Infrastructure Layer Registration
+// Infrastructure Layer (DbContext, Repos, AI services, RabbitMQ, JWT, Tenant)
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Application Layer Registration (MediatR)
+// Application Layer (MediatR commands/queries)
 builder.Services.AddApplication();
 
-// API Layer Configuration
+// JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options => { /* TokenValidationParameters */ });
+
+// API Layer (Controllers + Swagger with JWT security)
 builder.Services.AddControllers();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c => { /* Bearer security definition */ });
+```
+
+#### JWT Authentication Configuration
+
+```csharp
+var jwtSecret = builder.Configuration["Jwt:Secret"]!;
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "FolioForge";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "FolioForge.Client";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        NameClaimType = JwtRegisteredClaimNames.Sub,
+    };
+});
+```
+
+#### Middleware Pipeline Order
+
+The order of middleware is critical for correct tenant and auth resolution:
+
+```csharp
+app.UseCors("AllowReactApp");
+app.UseMiddleware<TenantMiddleware>();  // Resolve tenant from JWT or header
+app.UseHttpsRedirection();
+app.UseAuthentication();               // Validate JWT token
+app.UseAuthorization();                // Enforce [Authorize] attribute
+app.MapControllers();
+```
+
+#### Swagger JWT Configuration
+
+Swagger UI is configured with a Bearer token input for authenticated endpoint testing:
+
+```csharp
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "FolioForge API",
+        Version = "v1",
+        Description = "AI-Powered Portfolio Builder API"
+    });
+
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter your JWT token"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement { /* ... */ });
+});
 ```
 
 #### CORS Configuration
@@ -69,7 +145,9 @@ builder.Services.AddCors(options =>
             policy.WithOrigins(
                     "http://localhost:5173",
                     "http://localhost:5174",
-                    "http://localhost:5175"
+                    "http://localhost:5175",
+                    "http://127.0.0.1:5173",
+                    "http://127.0.0.1:5174"
                 )
                 .AllowAnyHeader()
                 .AllowAnyMethod()
@@ -77,14 +155,15 @@ builder.Services.AddCors(options =>
         }
         else
         {
-            // Production: Use configuration
+            // Production: Explicit origins from configuration
             var allowedOrigins = builder.Configuration
                 .GetSection("Cors:AllowedOrigins")
-                .Get<string[]>();
+                .Get<string[]>() ?? Array.Empty<string>();
             
             policy.WithOrigins(allowedOrigins)
                 .AllowAnyHeader()
-                .AllowAnyMethod();
+                .AllowAnyMethod()
+                .AllowCredentials();
         }
     });
 });
@@ -92,13 +171,109 @@ builder.Services.AddCors(options =>
 
 ---
 
-### PortfoliosController.cs
+### AuthController.cs
 
-The main API controller handling all portfolio-related operations:
+Handles user registration and login. These endpoints are **excluded from tenant middleware** — the tenant is resolved from the request body (register) or user record (login).
 
 ```csharp
 [ApiController]
 [Route("api/[controller]")]
+public class AuthController : ControllerBase
+{
+    private readonly IUserRepository _userRepository;
+    private readonly ITenantRepository _tenantRepository;
+    private readonly IAuthService _authService;
+}
+```
+
+#### Auth Endpoints
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| `POST` | `/api/auth/register` | Public | Register a new user under a tenant |
+| `POST` | `/api/auth/login` | Public | Login with email & password |
+| `GET` | `/api/auth/me` | `[Authorize]` | Get current user profile from JWT |
+
+#### Register Flow
+
+```
+1. Validate tenant exists and is active
+2. Check email uniqueness globally (cross-tenant)
+3. Hash password with BCrypt
+4. Create User entity
+5. Generate JWT token
+6. Return AuthResponse (token, userId, email, tenantId, tenantIdentifier)
+```
+
+#### Request/Response DTOs
+
+```csharp
+// Register
+public record RegisterRequest(
+    string Email,
+    string FullName,
+    string Password,
+    string TenantIdentifier
+);
+
+// Login
+public record LoginRequest(
+    string Email,
+    string Password
+);
+
+// Response (both register & login)
+public class AuthResponse
+{
+    public string Token { get; set; }
+    public Guid UserId { get; set; }
+    public string Email { get; set; }
+    public string FullName { get; set; }
+    public Guid TenantId { get; set; }
+    public string TenantIdentifier { get; set; }
+}
+```
+
+---
+
+### TenantsController.cs
+
+Handles tenant management. These endpoints are **excluded from tenant middleware** (no `X-Tenant-Id` header required).
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class TenantsController : ControllerBase
+{
+    private readonly ITenantRepository _tenantRepository;
+}
+```
+
+#### Tenant Endpoints
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| `POST` | `/api/tenants` | Public | Create a new tenant |
+| `GET` | `/api/tenants/{id:guid}` | Public | Get tenant by ID |
+
+#### Create Tenant Flow
+
+```
+1. Check if identifier already exists → 409 Conflict
+2. Create Tenant entity (Name, Identifier)
+3. Return 201 Created with tenant details
+```
+
+---
+
+### PortfoliosController.cs
+
+The main API controller handling all portfolio-related operations. **All endpoints require JWT authentication** via the `[Authorize]` attribute.
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
 public class PortfoliosController : ControllerBase
 {
     private readonly ISender _mediator;
@@ -112,14 +287,27 @@ public class PortfoliosController : ControllerBase
 }
 ```
 
-#### Endpoints
+#### Portfolio Endpoints
 
-| Method | Route | Handler | Description |
-|--------|-------|---------|-------------|
-| `POST` | `/api/portfolios` | `Create()` | Create new portfolio via MediatR command |
-| `GET` | `/api/portfolios/{id:guid}` | `GetById()` | Fetch portfolio with sections via MediatR query |
-| `GET` | `/api/portfolios/{slug}` | `GetBySlug()` | Fetch portfolio by URL slug |
-| `POST` | `/api/portfolios/{id}/upload-resume` | `UploadResume()` | Upload PDF and publish to RabbitMQ |
+| Method | Route | Description |
+|--------|-------|-------------|
+| `POST` | `/api/portfolios` | Create new portfolio via MediatR command |
+| `GET` | `/api/portfolios/{id:guid}` | Fetch portfolio with sections via MediatR query |
+| `GET` | `/api/portfolios/{slug}` | Fetch portfolio by URL slug |
+| `POST` | `/api/portfolios/{id}/upload-resume` | Upload PDF and publish to RabbitMQ |
+
+#### User ID Extraction
+
+The controller extracts the authenticated user's ID from JWT claims:
+
+```csharp
+private Guid GetUserId()
+{
+    var sub = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+           ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    return Guid.Parse(sub!);
+}
+```
 
 ---
 
@@ -165,22 +353,42 @@ public async Task<IActionResult> UploadResume(Guid id, IFormFile file)
 ```mermaid
 sequenceDiagram
     participant Client
+    participant TenantMiddleware
+    participant Auth
     participant Controller
     participant MediatR
     participant Handler
     participant Repository
     participant Database
     
-    Client->>Controller: HTTP Request
+    Client->>TenantMiddleware: HTTP Request
+    TenantMiddleware->>TenantMiddleware: Resolve tenant (JWT → Header)
+    TenantMiddleware->>Auth: Pass to auth middleware
+    Auth->>Auth: Validate JWT token
+    Auth->>Controller: Authenticated request
     Controller->>MediatR: Send(Command/Query)
     MediatR->>Handler: Handle(request)
     Handler->>Repository: Data operation
-    Repository->>Database: SQL Query
+    Repository->>Database: SQL Query (tenant-filtered)
     Database-->>Repository: Result
     Repository-->>Handler: Entity
     Handler-->>MediatR: Result<T>
     MediatR-->>Controller: Response
     Controller-->>Client: HTTP Response
+```
+
+### Tenant Middleware Resolution
+
+The `TenantMiddleware` resolves the current tenant for each request:
+
+```
+1. Check if path is excluded (/api/auth/*, /api/tenants/*, /swagger/*)
+   → If excluded, skip tenant resolution
+2. Try to extract tenantId from JWT claim "tenantId"
+   → If found, set tenant context
+3. Fall back to X-Tenant-Id header
+   → If found, set tenant context
+4. If neither found → return 400 Bad Request
 ```
 
 ---
@@ -192,22 +400,32 @@ sequenceDiagram
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=folioforge_db;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;"
+    "DefaultConnection": "Data Source=localhost;Initial Catalog=folioforge;Integrated Security=True;TrustServerCertificate=True;Pooling=True"
+  },
+  "Jwt": {
+    "Secret": "FolioForge-SuperSecret-Key-That-Is-At-Least-32-Chars-Long!!",
+    "Issuer": "FolioForge",
+    "Audience": "FolioForge.Client",
+    "ExpirationMinutes": "1440"
   },
   "Groq": {
     "ApiKey": "your-groq-api-key"
   },
   "Cors": {
     "AllowedOrigins": ["https://yourdomain.com"]
-  },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
   }
 }
 ```
+
+| Setting | Purpose |
+|---------|---------|
+| `ConnectionStrings:DefaultConnection` | SQL Server connection (Integrated Security for Windows Auth) |
+| `Jwt:Secret` | HMAC-SHA256 signing key (min 32 chars) |
+| `Jwt:Issuer` | Token issuer claim |
+| `Jwt:Audience` | Token audience claim |
+| `Jwt:ExpirationMinutes` | Token lifetime (1440 = 24 hours) |
+| `Groq:ApiKey` | API key for Groq AI (Llama 3.3-70B) |
+| `Cors:AllowedOrigins` | Production allowed origins |
 
 ---
 
@@ -228,9 +446,8 @@ dotnet run
 ```
 
 **Default URLs:**
-- HTTPS: https://localhost:7xxx
-- HTTP: http://localhost:5xxx
-- Swagger UI: http://localhost:5xxx (root)
+- HTTP: http://localhost:5090
+- Swagger UI: http://localhost:5090 (root)
 
 ---
 
@@ -244,6 +461,7 @@ dotnet run
 | **Swagger integration** | Better out-of-box Swagger support with attributes |
 | **Organization** | Natural grouping of related endpoints |
 | **Testability** | Easy to mock with dependency injection |
+| **Auth attributes** | Clean `[Authorize]` attribute support per controller or action |
 
 ### Why Return 202 for Resume Upload?
 
@@ -254,14 +472,25 @@ Long-running AI operations should not block HTTP requests:
 
 Returning `202 Accepted` allows the client to continue while processing happens asynchronously.
 
+### Why Exclude Auth/Tenant Routes from Tenant Middleware?
+
+| Route | Reason |
+|-------|--------|
+| `/api/auth/register` | Tenant is provided in the request body (`tenantIdentifier`) |
+| `/api/auth/login` | User lookup is cross-tenant (bypasses query filters) |
+| `/api/tenants/*` | Tenant management is a global operation |
+| `/swagger/*` | API docs are not tenant-scoped |
+
 ---
 
 ## 🔗 Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `MediatR` | Command/Query dispatch |
-| `Swashbuckle.AspNetCore` | Swagger generation |
+| `MediatR` | CQRS command/query dispatch |
+| `Swashbuckle.AspNetCore` | Swagger/OpenAPI generation |
+| `Microsoft.AspNetCore.Authentication.JwtBearer` | JWT Bearer token authentication |
+| `Microsoft.IdentityModel.Tokens` | Token validation parameters |
 | `Microsoft.EntityFrameworkCore.SqlServer` | Database provider |
 
 ---

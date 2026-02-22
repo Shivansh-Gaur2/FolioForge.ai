@@ -63,8 +63,8 @@ public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
-    private IConnection _connection;
-    private IChannel _channel;
+    private IConnection? _connection;
+    private IChannel? _channel;
     
     public Worker(ILogger<Worker> logger, IServiceScopeFactory scopeFactory)
     {
@@ -218,24 +218,24 @@ private async Task ProcessResumeAsync(string filePath, Guid portfolioId)
 ```csharp
 public class AiResultDto
 {
-    public string Summary { get; set; }
-    public List<string> Skills { get; set; }
-    public List<ExperienceDto> Experience { get; set; }
-    public List<ProjectDto> Projects { get; set; }
+    public string Summary { get; set; } = string.Empty;
+    public List<string> Skills { get; set; } = new();
+    public List<ExperienceDto> Experience { get; set; } = new();
+    public List<ProjectDto> Projects { get; set; } = new();
 }
 
 public class ExperienceDto
 {
-    public string Company { get; set; }
-    public string Role { get; set; }
-    public List<string> Points { get; set; } = new();  // Smart bullet points
+    public string Company { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public List<string> Points { get; set; } = new();
 }
 
 public class ProjectDto
 {
-    public string Name { get; set; }
-    public string TechStack { get; set; }
-    public List<string> Points { get; set; } = new();  // Smart bullet points
+    public string Name { get; set; } = string.Empty;
+    public string TechStack { get; set; } = string.Empty;
+    public List<string> Points { get; set; } = new();
 }
 ```
 
@@ -376,9 +376,10 @@ info: FolioForge.Worker.Worker[0]
    dotnet run --project backend/src/FolioForge.Worker
    ```
 
-3. **Upload a Resume:**
+3. **Upload a Resume (requires JWT):**
    ```bash
-   curl -X POST http://localhost:5000/api/portfolios/{id}/upload-resume \
+   curl -X POST http://localhost:5090/api/portfolios/{id}/upload-resume \
+     -H "Authorization: Bearer {your-jwt-token}" \
      -F "file=@resume.pdf"
    ```
 
