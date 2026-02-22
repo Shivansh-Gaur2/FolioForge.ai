@@ -61,7 +61,6 @@ export const PortfolioEditorPage = () => {
         .sort((a, b) => a.sortOrder - b.sortOrder);
 
     // Separate hero/about from body sections (hero always at top)
-    const heroSection  = visibleSections.find(s => s.sectionType?.toLowerCase() === 'hero');
     const aboutSection = visibleSections.find(s => s.sectionType?.toLowerCase() === 'about');
     const bodySections = visibleSections.filter(
         s => !['hero', 'about'].includes(s.sectionType?.toLowerCase())

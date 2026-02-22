@@ -51,8 +51,7 @@ const PortfolioContent = ({ portfolio }) => {
         [portfolio.sections]
     );
 
-    // Hero / About are rendered once at the top, regardless of layout
-    const heroSection  = visibleSections.find(s => s.sectionType?.toLowerCase() === 'hero');
+    // About section is used for the hero bio; hero rendering is handled via ParticleHero
     const aboutSection = visibleSections.find(s => s.sectionType?.toLowerCase() === 'about');
 
     // Parse bio from About section
