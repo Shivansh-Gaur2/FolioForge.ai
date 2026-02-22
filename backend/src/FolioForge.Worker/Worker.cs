@@ -1,4 +1,5 @@
-﻿using FolioForge.Application.Common.Events;
+﻿using FolioForge.Application.Common;
+using FolioForge.Application.Common.Events;
 using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Entities;
 using FolioForge.Infrastructure.Persistence;
@@ -140,6 +141,20 @@ public class Worker : BackgroundService
 
                 await dbContext.Sections.AddRangeAsync(newSections);
                 await dbContext.SaveChangesAsync();
+
+                // Invalidate Redis cache for this portfolio so the next fetch gets fresh data
+                var cacheService = scope.ServiceProvider.GetRequiredService<ICacheService>();
+                await cacheService.RemoveAsync(CacheKeys.PortfolioById(portfolioId));
+                // Also invalidate the user's portfolio list (fetch userId from the portfolio)
+                var portfolio = await dbContext.Portfolios
+                    .IgnoreQueryFilters()
+                    .Where(p => p.Id == portfolioId)
+                    .Select(p => new { p.UserId })
+                    .FirstOrDefaultAsync();
+                if (portfolio != null)
+                {
+                    await cacheService.RemoveAsync(CacheKeys.PortfoliosByUser(portfolio.UserId));
+                }
 
                 _logger.LogInformation(" ... ✅ DATABASE UPDATED SUCCESSFULLY!");
             }
