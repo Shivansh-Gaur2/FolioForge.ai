@@ -245,6 +245,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Vite
+.vite/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 

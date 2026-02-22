@@ -1,5 +1,7 @@
 ﻿using FolioForge.Api.Contracts;
 using FolioForge.Application.Commands.CreatePortfolio;
+using FolioForge.Application.Commands.DeletePortfolio;
+using FolioForge.Application.Commands.UpdateCustomization;
 using FolioForge.Application.Common.Events;
 using FolioForge.Application.Portfolios.Queries;
 using FolioForge.Domain.Interfaces;
@@ -54,6 +56,19 @@ namespace FolioForge.Api.Controllers
 
         }
 
+        /// <summary>
+        /// List all portfolios for the current authenticated user.
+        /// GET /api/portfolios/mine
+        /// </summary>
+        [HttpGet("mine")]
+        public async Task<IActionResult> ListMine()
+        {
+            var userId = GetUserId();
+            var query = new GetPortfoliosByUserQuery(userId);
+            var result = await _mediator.Send(query);
+            return Ok(result);
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
         {
@@ -69,6 +84,22 @@ namespace FolioForge.Api.Controllers
         public IActionResult GetBySlug(string slug)
         {
             return Ok(new { message = $"Fetching portfolio: {slug}" });
+        }
+
+        /// <summary>
+        /// Delete a portfolio owned by the current user.
+        /// DELETE /api/portfolios/{id}
+        /// </summary>
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            var userId = GetUserId();
+            var command = new DeletePortfolioCommand(id, userId);
+            var result = await _mediator.Send(command);
+
+            if (!result) return NotFound();
+
+            return NoContent();
         }
 
         [HttpPost("{id}/upload-resume")]
@@ -95,6 +126,36 @@ namespace FolioForge.Api.Controllers
             // 3. Return 202 Accepted
             // This tells the frontend: "We got it. We are working on it."
             return Accepted(new { message = "Resume queued for processing", portfolioId = id });
+        }
+
+        /// <summary>
+        /// Update the full customization (theme, colors, fonts, layout, section order/visibility/variant).
+        /// PUT /api/portfolios/{id}/customization
+        /// </summary>
+        [HttpPut("{id:guid}/customization")]
+        public async Task<IActionResult> UpdateCustomization(Guid id, [FromBody] UpdateCustomizationRequest request)
+        {
+            var userId = GetUserId();
+
+            var command = new UpdateCustomizationCommand(
+                id, userId,
+                request.ThemeName,
+                request.PrimaryColor,
+                request.SecondaryColor,
+                request.BackgroundColor,
+                request.TextColor,
+                request.FontHeading,
+                request.FontBody,
+                request.Layout,
+                request.Sections.Select(s => new SectionCustomization(
+                    s.SectionId, s.SortOrder, s.IsVisible, s.Variant
+                )).ToList()
+            );
+
+            var result = await _mediator.Send(command);
+            if (!result) return NotFound();
+
+            return NoContent();
         }
     }
 }

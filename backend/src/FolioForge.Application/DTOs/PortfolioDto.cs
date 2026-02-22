@@ -9,8 +9,13 @@ namespace FolioForge.Application.DTOs
     public class ThemeConfigDto
     {
         public string Name { get; set; } = "default";
-        public string PrimaryColor { get; set; } = "#000000";
+        public string PrimaryColor { get; set; } = "#3B82F6";
+        public string SecondaryColor { get; set; } = "#10B981";
+        public string BackgroundColor { get; set; } = "#FFFFFF";
+        public string TextColor { get; set; } = "#1F2937";
+        public string FontHeading { get; set; } = "Inter";
         public string FontBody { get; set; } = "Inter";
+        public string Layout { get; set; } = "single-column";
     }
 
     public class PortfolioDto

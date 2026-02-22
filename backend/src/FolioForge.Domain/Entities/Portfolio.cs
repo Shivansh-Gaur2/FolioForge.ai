@@ -26,7 +26,17 @@ namespace FolioForge.Domain.Entities
         // record because i want to keep it read only 
         // i will use it more like a DTO because I will need something for the 
         // info to like theme to be set and send to the frontend 
-        public record ThemeConfig(string Name, string PrimaryColor, string FontBody);
+        public record ThemeConfig(
+            string Name,
+            string PrimaryColor,
+            string SecondaryColor,
+            string BackgroundColor,
+            string TextColor,
+            string FontHeading,
+            string FontBody,
+            string Layout   // "single-column", "two-column", "sidebar"
+        );
+
         public ThemeConfig Theme { get; private set; } = default!;
 
         private Portfolio() { }
@@ -38,7 +48,9 @@ namespace FolioForge.Domain.Entities
             Slug = slug;
             Title = title;
             IsPublished = true;
-            Theme = new ThemeConfig("default", "#000000", "Inter");
+            Theme = new ThemeConfig(
+                "default", "#3B82F6", "#10B981", "#FFFFFF", "#1F2937",
+                "Inter", "Inter", "single-column");
         }
 
         public void AddSection(PortfolioSection section)
@@ -48,7 +60,32 @@ namespace FolioForge.Domain.Entities
 
         public void UpdateTheme(string primaryColor, string font)
         {
-            Theme = new ThemeConfig(Theme.Name, primaryColor, font);
+            Theme = Theme with { PrimaryColor = primaryColor, FontBody = font };
+        }
+
+        /// <summary>
+        /// Full customization update — theme preset, colors, fonts, layout.
+        /// </summary>
+        public void UpdateCustomization(
+            string themeName, string primaryColor, string secondaryColor,
+            string backgroundColor, string textColor,
+            string fontHeading, string fontBody, string layout)
+        {
+            Theme = new ThemeConfig(
+                themeName, primaryColor, secondaryColor,
+                backgroundColor, textColor,
+                fontHeading, fontBody, layout);
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Replace all sections with a new ordered list (for reorder / visibility changes).
+        /// </summary>
+        public void ReplaceSections(List<PortfolioSection> sections)
+        {
+            Sections.Clear();
+            foreach (var s in sections) Sections.Add(s);
+            UpdatedAt = DateTime.UtcNow;
         }
     }
 }

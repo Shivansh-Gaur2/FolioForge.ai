@@ -14,6 +14,7 @@ namespace FolioForge.Domain.Interfaces
 
         Task AddAsync(Portfolio portfolio);
         Task UpdateAsync(Portfolio portfolio);
+        Task DeleteAsync(Portfolio portfolio);
         Task SaveChangesAsync();
 
     }

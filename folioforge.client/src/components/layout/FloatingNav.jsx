@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThemeToggle } from '../ui/ThemeToggle';
 
-const navItems = [
+const DEFAULT_NAV_ITEMS = [
     { id: 'hero', label: 'Home', icon: '🏠' },
     { id: 'skills', label: 'Skills', icon: '⚡' },
     { id: 'experience', label: 'Experience', icon: '💼' },
@@ -10,7 +10,8 @@ const navItems = [
     { id: 'contact', label: 'Contact', icon: '✉️' },
 ];
 
-export const FloatingNav = () => {
+export const FloatingNav = ({ items }) => {
+    const navItems = items || DEFAULT_NAV_ITEMS;
     const [activeSection, setActiveSection] = useState('hero');
     const [isScrolled, setIsScrolled] = useState(false);
     const [isVisible, setIsVisible] = useState(true);
@@ -42,7 +43,7 @@ export const FloatingNav = () => {
 
         window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
-    }, [lastScrollY]);
+    }, [lastScrollY, navItems]);
 
     const scrollToSection = (id) => {
         const element = document.getElementById(id);

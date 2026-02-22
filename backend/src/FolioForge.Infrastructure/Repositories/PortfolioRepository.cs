@@ -46,5 +46,11 @@ namespace FolioForge.Infrastructure.Repositories
             _context.Portfolios.Update(portfolio);
             return Task.CompletedTask;
         }
+
+        public Task DeleteAsync(Portfolio portfolio)
+        {
+            _context.Portfolios.Remove(portfolio);
+            return Task.CompletedTask;
+        }
     }
 }

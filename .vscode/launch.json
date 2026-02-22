@@ -1,0 +1,77 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "API (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/backend/src/FolioForge.Api/bin/Debug/net9.0/FolioForge.Api.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/backend/src/FolioForge.Api",
+            "env": {
+                "ASPNETCORE_ENVIRONMENT": "Development",
+                "ASPNETCORE_URLS": "http://localhost:5090"
+            },
+            "preLaunchTask": "build-all-backend",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Worker (.NET)",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/backend/src/FolioForge.Worker/bin/Debug/net9.0/FolioForge.Worker.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/backend/src/FolioForge.Worker",
+            "env": {
+                "DOTNET_ENVIRONMENT": "Development"
+            },
+            "preLaunchTask": "build-all-backend",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Frontend (Chrome)",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:5173",
+            "webRoot": "${workspaceFolder}/folioforge.client/src",
+            "preLaunchTask": "dev-frontend",
+            "sourceMapPathOverrides": {
+                "webpack:///src/*": "${webRoot}/*"
+            }
+        },
+        {
+            "name": "Attach (.NET)",
+            "type": "coreclr",
+            "request": "attach"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack",
+            "configurations": [
+                "API (.NET)",
+                "Worker (.NET)",
+                "Frontend (Chrome)"
+            ],
+            "preLaunchTask": "build-all-backend",
+            "stopAll": true,
+            "presentation": {
+                "order": 1
+            }
+        },
+        {
+            "name": "Backend (API + Worker)",
+            "configurations": [
+                "API (.NET)",
+                "Worker (.NET)"
+            ],
+            "preLaunchTask": "build-all-backend",
+            "stopAll": true,
+            "presentation": {
+                "order": 2
+            }
+        }
+    ]
+}

@@ -1,30 +1,28 @@
-﻿using FolioForge.Application.Common.Interfaces;
+using FolioForge.Application.Common.Interfaces;
 using FolioForge.Application.DTOs;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
-namespace FolioForge.Application.Portfolios.Queries.GetPortfolioById;
+namespace FolioForge.Application.Portfolios.Queries;
 
-public class GetPortfolioByIdHandler : IRequestHandler<GetPortfolioByIdQuery, PortfolioDto?>
+public class GetPortfoliosByUserHandler : IRequestHandler<GetPortfoliosByUserQuery, List<PortfolioDto>>
 {
     private readonly IApplicationDbContext _context;
 
-    public GetPortfolioByIdHandler(IApplicationDbContext context)
+    public GetPortfoliosByUserHandler(IApplicationDbContext context)
     {
         _context = context;
     }
 
-    public async Task<PortfolioDto?> Handle(GetPortfolioByIdQuery request, CancellationToken cancellationToken)
+    public async Task<List<PortfolioDto>> Handle(GetPortfoliosByUserQuery request, CancellationToken cancellationToken)
     {
-        // 1. Fetch Portfolio + Sections from DB
-        var entity = await _context.Portfolios
-            .Include(p => p.Sections) // <--- CRITICAL: Use .Include() to get the sections!
-            .FirstOrDefaultAsync(p => p.Id == request.Id, cancellationToken);
+        var portfolios = await _context.Portfolios
+            .Where(p => p.UserId == request.UserId)
+            .Include(p => p.Sections)
+            .OrderByDescending(p => p.Id)
+            .ToListAsync(cancellationToken);
 
-        if (entity == null) return null;
-
-        // 2. Map Entity to DTO (Data Transfer Object)
-        return new PortfolioDto
+        return portfolios.Select(entity => new PortfolioDto
         {
             Id = entity.Id,
             Title = entity.Title,
@@ -40,7 +38,6 @@ public class GetPortfolioByIdHandler : IRequestHandler<GetPortfolioByIdQuery, Po
                 FontBody = entity.Theme.FontBody,
                 Layout = entity.Theme.Layout
             },
-            // Map the sections so React can see them
             Sections = entity.Sections
                 .OrderBy(s => s.SortOrder)
                 .Select(s => new PortfolioSectionDto
@@ -52,6 +49,6 @@ public class GetPortfolioByIdHandler : IRequestHandler<GetPortfolioByIdQuery, Po
                 IsVisible = s.IsVisible,
                 Variant = s.Variant
             }).ToList()
-        };
+        }).ToList();
     }
 }

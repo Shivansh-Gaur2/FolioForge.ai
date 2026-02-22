@@ -103,7 +103,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                   .HasConversion(
                       v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
                       v => System.Text.Json.JsonSerializer.Deserialize<Portfolio.ThemeConfig>(v, (System.Text.Json.JsonSerializerOptions?)null)
-                          ?? new Portfolio.ThemeConfig("default", "#000000", "Inter")
+                          ?? new Portfolio.ThemeConfig("default", "#3B82F6", "#10B981", "#FFFFFF", "#1F2937", "Inter", "Inter", "single-column")
                   )
                   .HasColumnType("nvarchar(max)")
                   .IsRequired();
@@ -138,6 +138,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.Property(e => e.SectionType)
                   .IsRequired()
                   .HasMaxLength(50);
+
+            // Display variant for customization
+            entity.Property(e => e.Variant)
+                  .HasMaxLength(50)
+                  .HasDefaultValue("default");
 
             // Performance: Index the SectionType
             // This allows fast queries like: "Find all Grid widgets"
