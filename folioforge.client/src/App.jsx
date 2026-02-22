@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PortfolioPage } from './pages/PortfolioPage';
+import { PortfolioEditorPage } from './pages/PortfolioEditorPage';
 
 /**
  * App Component
@@ -53,6 +54,11 @@ function App() {
                             {/* Protected: dashboard */}
                             <Route path="/dashboard" element={
                                 <ProtectedRoute><DashboardPage /></ProtectedRoute>
+                            } />
+
+                            {/* Protected: portfolio customization editor */}
+                            <Route path="/portfolio/:id/edit" element={
+                                <ProtectedRoute><PortfolioEditorPage /></ProtectedRoute>
                             } />
 
                             {/* Public: view a portfolio by id */}

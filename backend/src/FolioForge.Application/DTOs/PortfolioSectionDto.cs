@@ -12,5 +12,7 @@ namespace FolioForge.Application.DTOs
         public string SectionType { get; set; } = string.Empty;
         public string Content { get; set; } = string.Empty;
         public int SortOrder { get; set; }
+        public bool IsVisible { get; set; } = true;
+        public string Variant { get; set; } = "default";
     }
 }

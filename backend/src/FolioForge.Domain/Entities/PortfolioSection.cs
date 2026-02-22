@@ -17,6 +17,11 @@ namespace FolioForge.Domain.Entities
         public int SortOrder { get; set; }
         public bool IsVisible { get; set; } = true;
 
+        /// <summary>
+        /// Display variant for customization (e.g. "default", "timeline", "card", "minimal").
+        /// </summary>
+        public string Variant { get; set; } = "default";
+
         // Store JSON content as a string for SQL Server compatibility
         // This allows flexible schema-less data storage
         public string Content { get; private set; } = default!;
