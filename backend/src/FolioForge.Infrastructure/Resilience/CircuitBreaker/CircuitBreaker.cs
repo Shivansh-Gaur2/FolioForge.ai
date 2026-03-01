@@ -30,7 +30,7 @@ public sealed class CircuitBreaker : IDisposable
     private readonly Func<DateTimeOffset> _clock;
 
     // State machine
-    private volatile int _state = (int)CircuitBreakerState.Closed;
+    private int _state = (int)CircuitBreakerState.Closed;
     private readonly object _transitionLock = new();
 
     // Closed state tracking
@@ -46,7 +46,7 @@ public sealed class CircuitBreaker : IDisposable
     private int _halfOpenAttemptCount;
 
     public string Name => _name;
-    public CircuitBreakerState State => (CircuitBreakerState)Volatile.Read(ref _state);
+    public CircuitBreakerState State => (CircuitBreakerState)Interlocked.CompareExchange(ref _state, 0, 0);
 
     public CircuitBreaker(
         string name,
@@ -257,7 +257,7 @@ public sealed class CircuitBreaker : IDisposable
                     break;
             }
 
-            Volatile.Write(ref _state, (int)newState);
+            Interlocked.Exchange(ref _state, (int)newState);
         }
     }
 
