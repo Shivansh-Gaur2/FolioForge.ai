@@ -5,6 +5,8 @@ using FolioForge.Application.Commands.UpdateCustomization;
 using FolioForge.Application.Common.Events;
 using FolioForge.Application.Portfolios.Queries;
 using FolioForge.Domain.Interfaces;
+using FolioForge.Infrastructure.RateLimiting;
+using FolioForge.Infrastructure.Resilience.Bulkhead;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +15,11 @@ using System.IdentityModel.Tokens.Jwt;
 
 namespace FolioForge.Api.Controllers
 {
+    /// <summary>
+    /// Portfolio CRUD endpoints.
+    /// Uses "Default" policy (20 burst, 10/s sustained) for most operations.
+    /// Upload endpoint overrides with "Upload" policy (stricter).
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -103,6 +110,8 @@ namespace FolioForge.Api.Controllers
         }
 
         [HttpPost("{id}/upload-resume")]
+        [RateLimit("Upload")]
+        [Bulkhead("Upload")]
         public async Task<IActionResult> UploadResume(Guid id, IFormFile file)
         {
             if (file == null || file.Length == 0)

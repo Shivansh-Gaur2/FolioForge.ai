@@ -1,5 +1,7 @@
 using FolioForge.Infrastructure;
 using FolioForge.Infrastructure.Middleware;
+using FolioForge.Infrastructure.RateLimiting;
+using FolioForge.Infrastructure.Resilience.Bulkhead;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -157,6 +159,14 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Distributed rate limiting (per-user/IP Token Bucket via Redis)
+// Placed AFTER auth so we can identify users, BEFORE controllers to short-circuit early
+app.UseMiddleware<RateLimitMiddleware>();
+
+// Bulkhead isolation (per-partition concurrency limits)
+// Placed AFTER rate limiting: rate-limited requests never consume bulkhead slots
+app.UseMiddleware<BulkheadMiddleware>();
 
 // Map the Controllers (connects your PortfoliosController)
 try

@@ -3,7 +3,9 @@ using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Interfaces;
 using FolioForge.Infrastructure.Messaging;
 using FolioForge.Infrastructure.Persistence;
+using FolioForge.Infrastructure.RateLimiting;
 using FolioForge.Infrastructure.Repositories;
+using FolioForge.Infrastructure.Resilience;
 using FolioForge.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -54,7 +56,15 @@ namespace FolioForge.Infrastructure
             services.AddScoped<IAuthService, JwtAuthService>();
             services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();
             services.AddScoped<IPdfService, PdfService>();
-            services.AddHttpClient<IAiService, GroqAiService>(); 
+            services.AddHttpClient<IAiService, GroqAiService>();
+
+            // Distributed rate limiting (Token Bucket via Redis)
+            services.AddDistributedRateLimiting(configuration);
+
+            // Resilience patterns (Bulkhead + Circuit Breaker)
+            // Must be called AFTER service registrations above so decorators can wrap them
+            services.AddResiliencePatterns(configuration);
+
             return services;
         }
         public static IServiceCollection AddApplication(this IServiceCollection services)
