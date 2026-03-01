@@ -1,4 +1,5 @@
-﻿using FolioForge.Application.Common.Interfaces;
+﻿using FolioForge.Application.Common;
+using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Common;
 using FolioForge.Domain.Entities;
 using FolioForge.Domain.Interfaces;
@@ -15,11 +16,13 @@ namespace FolioForge.Application.Commands.CreatePortfolio
     {
         private readonly IPortfolioRepository _repository;
         private readonly ITenantContext _tenantContext;
+        private readonly ICacheService _cache;
 
-        public CreatePortfolioCommandHandler(IPortfolioRepository repository, ITenantContext tenantContext)
+        public CreatePortfolioCommandHandler(IPortfolioRepository repository, ITenantContext tenantContext, ICacheService cache)
         {
             _repository = repository;
             _tenantContext = tenantContext;
+            _cache = cache;
         }
 
         public async Task<Result<Guid>> Handle(CreatePortfolioCommand request, CancellationToken ct = default)
@@ -37,6 +40,9 @@ namespace FolioForge.Application.Commands.CreatePortfolio
 
             await _repository.AddAsync(portfolio);
             await _repository.SaveChangesAsync();
+
+            // Invalidate user's portfolio list cache
+            await _cache.RemoveAsync(CacheKeys.PortfoliosByUser(request.UserId), ct);
 
             return Result<Guid>.Success(portfolio.Id);
         }

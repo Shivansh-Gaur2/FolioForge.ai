@@ -1,5 +1,7 @@
 using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Entities;
+using FolioForge.Infrastructure.RateLimiting;
+using FolioForge.Infrastructure.Resilience.Bulkhead;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FolioForge.Api.Controllers
@@ -9,9 +11,14 @@ namespace FolioForge.Api.Controllers
     /// Register and Login are EXCLUDED from tenant middleware
     /// because the tenant is resolved from the request body (register) 
     /// or from the user's stored tenantId (login).
+    /// 
+    /// Rate limited with the "Auth" policy (strict: 5 burst, 2/s sustained)
+    /// to prevent credential stuffing and brute-force attacks.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    [RateLimit("Auth")]
+    [Bulkhead("Auth")]
     public class AuthController : ControllerBase
     {
         private readonly IUserRepository _userRepository;

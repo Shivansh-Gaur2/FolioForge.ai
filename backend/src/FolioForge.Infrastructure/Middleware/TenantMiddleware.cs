@@ -1,3 +1,4 @@
+using FolioForge.Application.Common;
 using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Entities;
 using FolioForge.Infrastructure.Persistence;
@@ -10,12 +11,17 @@ using System.IdentityModel.Tokens.Jwt;
 namespace FolioForge.Infrastructure.Middleware
 {
     /// <summary>
+    /// Lightweight record for caching tenant data in Redis.
+    /// We can't cache the EF entity directly (private setters, navigation props).
+    /// </summary>
+    internal record CachedTenant(Guid Id, string Identifier, bool IsActive);
+
+    /// <summary>
     /// Middleware that resolves the current tenant. Resolution order:
     /// 1. JWT "tenantId" claim (for authenticated users — no header needed)
     /// 2. X-Tenant-Id header (for unauthenticated / public endpoints)
     /// 
-    /// Must run BEFORE authentication so the DbContext query filters are set.
-    /// For JWT-based resolution, we parse the token manually (before ASP.NET auth runs).
+    /// Tenant lookups are cached in Redis to avoid hitting the DB on every request.
     /// </summary>
     public class TenantMiddleware
     {
@@ -53,6 +59,7 @@ namespace FolioForge.Infrastructure.Middleware
 
             var dbContext = context.RequestServices.GetRequiredService<ApplicationDbContext>();
             var tenantContext = context.RequestServices.GetRequiredService<ITenantContext>();
+            var cache = context.RequestServices.GetRequiredService<ICacheService>();
 
             // ── Strategy 1: Try to resolve tenant from JWT Bearer token ──
             var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
@@ -69,14 +76,21 @@ namespace FolioForge.Infrastructure.Middleware
 
                         if (tenantIdClaim != null && Guid.TryParse(tenantIdClaim, out var tenantId))
                         {
-                            var tenant = await dbContext.Tenants
-                                .IgnoreQueryFilters()
-                                .FirstOrDefaultAsync(t => t.Id == tenantId);
+                            var cached = await cache.GetOrSetAsync(
+                                CacheKeys.TenantById(tenantId),
+                                async () =>
+                                {
+                                    var t = await dbContext.Tenants
+                                        .IgnoreQueryFilters()
+                                        .FirstOrDefaultAsync(t => t.Id == tenantId);
+                                    return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
+                                },
+                                CacheKeys.TenantTtl);
 
-                            if (tenant != null && tenant.IsActive)
+                            if (cached != null && cached.IsActive)
                             {
-                                tenantContext.SetTenant(tenant.Id, tenant.Identifier);
-                                _logger.LogDebug("Tenant resolved from JWT: {TenantIdentifier}", tenant.Identifier);
+                                tenantContext.SetTenant(cached.Id, cached.Identifier);
+                                _logger.LogDebug("Tenant resolved from JWT (cached): {TenantIdentifier}", cached.Identifier);
                                 await _next(context);
                                 return;
                             }
@@ -95,26 +109,33 @@ namespace FolioForge.Infrastructure.Middleware
             {
                 var tenantIdentifier = tenantHeader.ToString().Trim().ToLowerInvariant();
 
-                var tenant = await dbContext.Tenants
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.Identifier == tenantIdentifier);
+                var cached = await cache.GetOrSetAsync(
+                    CacheKeys.TenantByIdentifier(tenantIdentifier),
+                    async () =>
+                    {
+                        var t = await dbContext.Tenants
+                            .IgnoreQueryFilters()
+                            .FirstOrDefaultAsync(t => t.Identifier == tenantIdentifier);
+                        return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
+                    },
+                    CacheKeys.TenantTtl);
 
-                if (tenant == null)
+                if (cached == null)
                 {
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     await context.Response.WriteAsJsonAsync(new { error = $"Tenant '{tenantIdentifier}' not found." });
                     return;
                 }
 
-                if (!tenant.IsActive)
+                if (!cached.IsActive)
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsJsonAsync(new { error = "Tenant is deactivated." });
                     return;
                 }
 
-                tenantContext.SetTenant(tenant.Id, tenant.Identifier);
-                _logger.LogDebug("Tenant resolved from header: {TenantIdentifier}", tenant.Identifier);
+                tenantContext.SetTenant(cached.Id, cached.Identifier);
+                _logger.LogDebug("Tenant resolved from header (cached): {TenantIdentifier}", cached.Identifier);
                 await _next(context);
                 return;
             }

@@ -1,5 +1,6 @@
 using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Entities;
+using FolioForge.Infrastructure.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FolioForge.Api.Controllers
@@ -7,9 +8,11 @@ namespace FolioForge.Api.Controllers
     /// <summary>
     /// Controller for tenant management operations.
     /// These endpoints are EXCLUDED from tenant middleware (no X-Tenant-Id required).
+    /// Rate limited with "Strict" policy to prevent tenant enumeration.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    [RateLimit("Strict")]
     public class TenantsController : ControllerBase
     {
         private readonly ITenantRepository _tenantRepository;

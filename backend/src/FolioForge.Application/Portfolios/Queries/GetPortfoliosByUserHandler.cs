@@ -1,3 +1,4 @@
+using FolioForge.Application.Common;
 using FolioForge.Application.Common.Interfaces;
 using FolioForge.Application.DTOs;
 using MediatR;
@@ -8,47 +9,54 @@ namespace FolioForge.Application.Portfolios.Queries;
 public class GetPortfoliosByUserHandler : IRequestHandler<GetPortfoliosByUserQuery, List<PortfolioDto>>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICacheService _cache;
 
-    public GetPortfoliosByUserHandler(IApplicationDbContext context)
+    public GetPortfoliosByUserHandler(IApplicationDbContext context, ICacheService cache)
     {
         _context = context;
+        _cache = cache;
     }
 
     public async Task<List<PortfolioDto>> Handle(GetPortfoliosByUserQuery request, CancellationToken cancellationToken)
     {
-        var portfolios = await _context.Portfolios
-            .Where(p => p.UserId == request.UserId)
-            .Include(p => p.Sections)
-            .OrderByDescending(p => p.Id)
-            .ToListAsync(cancellationToken);
+        var cacheKey = CacheKeys.PortfoliosByUser(request.UserId);
 
-        return portfolios.Select(entity => new PortfolioDto
+        return await _cache.GetOrSetAsync(cacheKey, async () =>
         {
-            Id = entity.Id,
-            Title = entity.Title,
-            Slug = entity.Slug,
-            Theme = new ThemeConfigDto
+            var portfolios = await _context.Portfolios
+                .Where(p => p.UserId == request.UserId)
+                .Include(p => p.Sections)
+                .OrderByDescending(p => p.Id)
+                .ToListAsync(cancellationToken);
+
+            return portfolios.Select(entity => new PortfolioDto
             {
-                Name = entity.Theme.Name,
-                PrimaryColor = entity.Theme.PrimaryColor,
-                SecondaryColor = entity.Theme.SecondaryColor,
-                BackgroundColor = entity.Theme.BackgroundColor,
-                TextColor = entity.Theme.TextColor,
-                FontHeading = entity.Theme.FontHeading,
-                FontBody = entity.Theme.FontBody,
-                Layout = entity.Theme.Layout
-            },
-            Sections = entity.Sections
-                .OrderBy(s => s.SortOrder)
-                .Select(s => new PortfolioSectionDto
-            {
-                Id = s.Id,
-                SectionType = s.SectionType,
-                Content = s.Content,
-                SortOrder = s.SortOrder,
-                IsVisible = s.IsVisible,
-                Variant = s.Variant
-            }).ToList()
-        }).ToList();
+                Id = entity.Id,
+                Title = entity.Title,
+                Slug = entity.Slug,
+                Theme = new ThemeConfigDto
+                {
+                    Name = entity.Theme.Name,
+                    PrimaryColor = entity.Theme.PrimaryColor,
+                    SecondaryColor = entity.Theme.SecondaryColor,
+                    BackgroundColor = entity.Theme.BackgroundColor,
+                    TextColor = entity.Theme.TextColor,
+                    FontHeading = entity.Theme.FontHeading,
+                    FontBody = entity.Theme.FontBody,
+                    Layout = entity.Theme.Layout
+                },
+                Sections = entity.Sections
+                    .OrderBy(s => s.SortOrder)
+                    .Select(s => new PortfolioSectionDto
+                {
+                    Id = s.Id,
+                    SectionType = s.SectionType,
+                    Content = s.Content,
+                    SortOrder = s.SortOrder,
+                    IsVisible = s.IsVisible,
+                    Variant = s.Variant
+                }).ToList()
+            }).ToList();
+        }, CacheKeys.UserPortfolioListTtl, cancellationToken) ?? new List<PortfolioDto>();
     }
 }
