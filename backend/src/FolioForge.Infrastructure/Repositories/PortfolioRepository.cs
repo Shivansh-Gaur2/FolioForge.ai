@@ -35,10 +35,9 @@ namespace FolioForge.Infrastructure.Repositories
             return await _context.Portfolios.Include(p => p.Sections).FirstOrDefaultAsync(p => p.Slug == slug);
         }
 
-        public Task SaveChangesAsync()
+        public async Task SaveChangesAsync()
         {
-            _context.SaveChanges();
-            return Task.CompletedTask;
+            await _context.SaveChangesAsync();
         }
 
         public Task UpdateAsync(Portfolio portfolio)

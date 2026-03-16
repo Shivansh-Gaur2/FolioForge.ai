@@ -21,6 +21,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<User> Users { get; set; }
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<PortfolioSection> Sections { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -156,6 +157,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
             entity.Property(e => e.SortOrder)
                   .HasDefaultValue(0);
+        });
+
+        // ============================================================
+        // 3. Configure RefreshToken (Auth Token Rotation)
+        // ============================================================
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.ToTable("refresh_tokens");
+            entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => e.Token).IsUnique();
+            entity.HasIndex(e => e.UserId);
+
+            entity.Property(e => e.Token)
+                  .IsRequired()
+                  .HasMaxLength(256);
+
+            entity.Property(e => e.ReplacedByToken)
+                  .HasMaxLength(256);
         });
     }
 

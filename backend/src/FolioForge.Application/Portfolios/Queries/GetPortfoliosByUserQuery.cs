@@ -1,9 +1,12 @@
+using FolioForge.Application.Common;
 using FolioForge.Application.DTOs;
 using MediatR;
 
 namespace FolioForge.Application.Portfolios.Queries;
 
 /// <summary>
-/// Returns all portfolios for the given user (within current tenant scope).
+/// Returns paginated portfolios for the given user (within current tenant scope).
+/// Defaults: page 1, pageSize 10, max 50.
 /// </summary>
-public record GetPortfoliosByUserQuery(Guid UserId) : IRequest<List<PortfolioDto>>;
+public record GetPortfoliosByUserQuery(Guid UserId, int Page = 1, int PageSize = 10)
+    : IRequest<PagedResult<PortfolioDto>>;

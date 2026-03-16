@@ -41,7 +41,8 @@ export const DashboardPage = () => {
         setListError(null);
         try {
             const result = await PortfolioService.listMine();
-            setPortfolios(result);
+            // Backend returns PagedResult { items, page, totalCount, ... }
+            setPortfolios(result.items ?? result);
         } catch (err) {
             setListError(err.message || 'Failed to load portfolios');
         } finally {

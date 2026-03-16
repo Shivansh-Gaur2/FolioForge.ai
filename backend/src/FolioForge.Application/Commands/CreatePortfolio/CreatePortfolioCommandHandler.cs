@@ -41,8 +41,8 @@ namespace FolioForge.Application.Commands.CreatePortfolio
             await _repository.AddAsync(portfolio);
             await _repository.SaveChangesAsync();
 
-            // Invalidate user's portfolio list cache
-            await _cache.RemoveAsync(CacheKeys.PortfoliosByUser(request.UserId), ct);
+            // Invalidate user's portfolio list cache (prefix-based to clear all paginated variants)
+            await _cache.RemoveByPrefixAsync(CacheKeys.PortfoliosByUser(request.UserId), ct);
 
             return Result<Guid>.Success(portfolio.Id);
         }

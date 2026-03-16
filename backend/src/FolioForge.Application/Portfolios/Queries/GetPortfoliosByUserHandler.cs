@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FolioForge.Application.Portfolios.Queries;
 
-public class GetPortfoliosByUserHandler : IRequestHandler<GetPortfoliosByUserQuery, List<PortfolioDto>>
+public class GetPortfoliosByUserHandler : IRequestHandler<GetPortfoliosByUserQuery, PagedResult<PortfolioDto>>
 {
     private readonly IApplicationDbContext _context;
     private readonly ICacheService _cache;
@@ -17,19 +17,29 @@ public class GetPortfoliosByUserHandler : IRequestHandler<GetPortfoliosByUserQue
         _cache = cache;
     }
 
-    public async Task<List<PortfolioDto>> Handle(GetPortfoliosByUserQuery request, CancellationToken cancellationToken)
+    public async Task<PagedResult<PortfolioDto>> Handle(GetPortfoliosByUserQuery request, CancellationToken cancellationToken)
     {
-        var cacheKey = CacheKeys.PortfoliosByUser(request.UserId);
+        // Clamp page/pageSize to safe bounds
+        var page = Math.Max(1, request.Page);
+        var pageSize = Math.Clamp(request.PageSize, 1, 50);
+
+        var cacheKey = $"{CacheKeys.PortfoliosByUser(request.UserId)}:p{page}:s{pageSize}";
 
         return await _cache.GetOrSetAsync(cacheKey, async () =>
         {
-            var portfolios = await _context.Portfolios
+            var query = _context.Portfolios
                 .Where(p => p.UserId == request.UserId)
+                .OrderByDescending(p => p.CreatedAt);
+
+            var totalCount = await query.CountAsync(cancellationToken);
+
+            var portfolios = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .Include(p => p.Sections)
-                .OrderByDescending(p => p.Id)
                 .ToListAsync(cancellationToken);
 
-            return portfolios.Select(entity => new PortfolioDto
+            var items = portfolios.Select(entity => new PortfolioDto
             {
                 Id = entity.Id,
                 Title = entity.Title,
@@ -57,6 +67,14 @@ public class GetPortfoliosByUserHandler : IRequestHandler<GetPortfoliosByUserQue
                     Variant = s.Variant
                 }).ToList()
             }).ToList();
-        }, CacheKeys.UserPortfolioListTtl, cancellationToken) ?? new List<PortfolioDto>();
+
+            return new PagedResult<PortfolioDto>
+            {
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = totalCount
+            };
+        }, CacheKeys.UserPortfolioListTtl, cancellationToken) ?? new PagedResult<PortfolioDto>();
     }
 }

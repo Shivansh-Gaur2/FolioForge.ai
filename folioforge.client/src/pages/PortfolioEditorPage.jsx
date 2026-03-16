@@ -8,6 +8,7 @@ import { AnimatedSkillsSection } from '../features/portfolio/AnimatedSkillsSecti
 import { AnimatedTimelineSection } from '../features/portfolio/AnimatedTimelineSection';
 import { AnimatedProjectsSection } from '../features/portfolio/AnimatedProjectsSection';
 import { ContactSection } from '../features/portfolio/ContactSection';
+import { AnimatedEducationSection } from '../features/portfolio/AnimatedEducationSection';
 import { ParticleHero } from '../features/portfolio/ParticleHero';
 
 /** Map section types to the real rendered components */
@@ -16,6 +17,7 @@ const SECTION_RENDERERS = {
     timeline: (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
     projects: (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
     contact:  (section) => <ContactSection key={section.id} variant={section.variant} />,
+    education: (section) => <AnimatedEducationSection key={section.id} content={section.content} variant={section.variant} />,
 };
 
 const SECTION_ICONS = {
@@ -73,14 +75,8 @@ export const PortfolioEditorPage = () => {
         if (aboutContent) bio = JSON.parse(aboutContent).content;
     } catch { /* ignore */ }
 
-    // Two-column: classify sections as full-width or half-width
-    const FULL_WIDTH_TYPES = ['projects', 'timeline', 'contact'];
-    const isFullWidth = (s) => FULL_WIDTH_TYPES.includes(s.sectionType?.toLowerCase());
-
     const layoutClass =
-        layout === 'two-column'  ? 'grid grid-cols-1 md:grid-cols-2 gap-0' :
-        layout === 'sidebar'     ? 'flex' :
-                                   'flex flex-col';
+        layout === 'sidebar' ? 'flex' : 'flex flex-col';
 
     return (
         <div className="h-screen flex bg-slate-950 text-white">
@@ -172,10 +168,9 @@ export const PortfolioEditorPage = () => {
                             </aside>
                         )}
 
-                        {layout === 'two-column' ? (
-                            // Smart two-column: full-width sections span both cols
-                            bodySections.length === 0 ? (
-                                <div className="md:col-span-2 flex items-center justify-center h-64 text-center p-12">
+                        <main className="flex-1 min-w-0">
+                            {bodySections.length === 0 ? (
+                                <div className="flex items-center justify-center h-64 text-center p-12">
                                     <div>
                                         <p className="text-4xl mb-4">📄</p>
                                         <p className="text-lg font-medium" style={{ color: textColor }}>
@@ -190,62 +185,24 @@ export const PortfolioEditorPage = () => {
                                 bodySections.map(section => {
                                     const type = section.sectionType?.toLowerCase();
                                     const renderer = SECTION_RENDERERS[type];
-                                    const spanClass = isFullWidth(section) ? 'md:col-span-2' : '';
                                     if (renderer) {
                                         return (
-                                            <div key={section.id} id={`section-${section.id}`} className={spanClass}>
+                                            <div key={section.id} id={`section-${section.id}`}>
                                                 {renderer(section)}
                                             </div>
                                         );
                                     }
                                     return (
-                                        <div key={section.id} className={spanClass}>
-                                            <SectionPreviewFallback
-                                                section={section}
-                                                colors={{ primaryColor, secondaryColor, textColor }}
-                                                fonts={{ fontHeading, fontBody }}
-                                            />
-                                        </div>
+                                        <SectionPreviewFallback
+                                            key={section.id}
+                                            section={section}
+                                            colors={{ primaryColor, secondaryColor, textColor }}
+                                            fonts={{ fontHeading, fontBody }}
+                                        />
                                     );
                                 })
-                            )
-                        ) : (
-                            <main className="flex-1 min-w-0">
-                                {bodySections.length === 0 ? (
-                                    <div className="flex items-center justify-center h-64 text-center p-12">
-                                        <div>
-                                            <p className="text-4xl mb-4">📄</p>
-                                            <p className="text-lg font-medium" style={{ color: textColor }}>
-                                                No sections to show
-                                            </p>
-                                            <p className="text-sm mt-2" style={{ color: textColor, opacity: 0.5 }}>
-                                                Upload a resume to populate your portfolio, then customize it here.
-                                            </p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    bodySections.map(section => {
-                                        const type = section.sectionType?.toLowerCase();
-                                        const renderer = SECTION_RENDERERS[type];
-                                        if (renderer) {
-                                            return (
-                                                <div key={section.id} id={`section-${section.id}`}>
-                                                    {renderer(section)}
-                                                </div>
-                                            );
-                                        }
-                                        return (
-                                            <SectionPreviewFallback
-                                                key={section.id}
-                                                section={section}
-                                                colors={{ primaryColor, secondaryColor, textColor }}
-                                                fonts={{ fontHeading, fontBody }}
-                                            />
-                                        );
-                                    })
-                                )}
-                            </main>
-                        )}
+                            )}
+                        </main>
                     </motion.div>
                 </div>
             </div>

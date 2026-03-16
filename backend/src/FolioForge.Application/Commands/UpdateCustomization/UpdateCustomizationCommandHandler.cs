@@ -52,7 +52,7 @@ public class UpdateCustomizationCommandHandler : IRequestHandler<UpdateCustomiza
 
         // Invalidate caches — the portfolio and the user's list
         await _cache.RemoveAsync(CacheKeys.PortfolioById(request.PortfolioId), cancellationToken);
-        await _cache.RemoveAsync(CacheKeys.PortfoliosByUser(request.UserId), cancellationToken);
+        await _cache.RemoveByPrefixAsync(CacheKeys.PortfoliosByUser(request.UserId), cancellationToken);
 
         return true;
     }

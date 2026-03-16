@@ -25,7 +25,7 @@ export const THEME_PRESETS = [
     description: 'Natural earthy tones',
     colors: { primary: '#059669', secondary: '#D97706', background: '#FEFCE8', text: '#1C1917' },
     fonts: { heading: 'Playfair Display', body: 'Source Sans Pro' },
-    layout: 'two-column',
+    layout: 'single-column',
   },
   {
     id: 'ocean',
@@ -49,7 +49,7 @@ export const THEME_PRESETS = [
     description: 'Warm gradient-inspired palette',
     colors: { primary: '#F59E0B', secondary: '#EF4444', background: '#FFFBEB', text: '#451A03' },
     fonts: { heading: 'Montserrat', body: 'Lato' },
-    layout: 'two-column',
+    layout: 'single-column',
   },
 ];
 

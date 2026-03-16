@@ -2,6 +2,7 @@ using FolioForge.Infrastructure;
 using FolioForge.Infrastructure.Middleware;
 using FolioForge.Infrastructure.RateLimiting;
 using FolioForge.Infrastructure.Resilience.Bulkhead;
+using FolioForge.Infrastructure.Telemetry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -59,6 +60,33 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 // This registers the DbContext AND the Repositories automatically.
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApplication(); // Registers MediatR commands
+
+// Observability: distributed tracing & metrics
+builder.Services.AddFolioForgeOpenTelemetry(builder.Configuration);
+
+// ==================================================================
+// HEALTH CHECKS (SQL Server, Redis, RabbitMQ)
+// ==================================================================
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+var rabbitHost = builder.Configuration["RabbitMq:HostName"] ?? "localhost";
+
+builder.Services.AddHealthChecks()
+    .AddSqlServer(
+        connectionString!,
+        name: "sqlserver",
+        tags: new[] { "db", "ready" })
+    .AddRedis(
+        redisConnectionString,
+        name: "redis",
+        tags: new[] { "cache", "ready" })
+    .AddRabbitMQ(
+        sp =>
+        {
+            var factory = new RabbitMQ.Client.ConnectionFactory { HostName = rabbitHost };
+            return factory.CreateConnectionAsync().GetAwaiter().GetResult();
+        },
+        name: "rabbitmq",
+        tags: new[] { "messaging", "ready" });
 
 // ==================================================================
 // 2. JWT AUTHENTICATION
@@ -139,6 +167,10 @@ var app = builder.Build();
 // 3. HTTP REQUEST PIPELINE
 // ==================================================================
 
+// Global exception handler — catches unhandled exceptions and returns ProblemDetails.
+// Must be FIRST so it wraps the entire pipeline.
+app.UseMiddleware<GlobalExceptionMiddleware>();
+
 // Enable Swagger UI in Development
 if (app.Environment.IsDevelopment())
 {
@@ -152,13 +184,15 @@ if (app.Environment.IsDevelopment())
 }
 app.UseCors("AllowReactApp");
 
-// Multi-Tenancy: Resolve tenant from JWT or X-Tenant-Id header
-app.UseMiddleware<TenantMiddleware>();
-
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Multi-Tenancy: Resolve tenant from validated JWT claims or X-Tenant-Id header
+// MUST be AFTER UseAuthentication() so that HttpContext.User is populated
+// with validated claims (signature, expiry, issuer verified).
+app.UseMiddleware<TenantMiddleware>();
 
 // Distributed rate limiting (per-user/IP Token Bucket via Redis)
 // Placed AFTER auth so we can identify users, BEFORE controllers to short-circuit early
@@ -167,6 +201,21 @@ app.UseMiddleware<RateLimitMiddleware>();
 // Bulkhead isolation (per-partition concurrency limits)
 // Placed AFTER rate limiting: rate-limited requests never consume bulkhead slots
 app.UseMiddleware<BulkheadMiddleware>();
+
+// Prometheus scraping endpoint for metrics
+app.MapPrometheusScrapingEndpoint();
+
+// Health check endpoints — no auth required for liveness/readiness probes
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    // Liveness: is the process alive? Always returns healthy unless the process is deadlocked.
+    Predicate = _ => false
+});
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    // Readiness: can we serve traffic? Checks DB, Redis, RabbitMQ.
+    Predicate = check => check.Tags.Contains("ready")
+});
 
 // Map the Controllers (connects your PortfoliosController)
 try

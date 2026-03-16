@@ -47,11 +47,13 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     /**
-     * Persist auth response (from login or register).
+     * Persist auth response (from login, register, or refresh).
+     * Backend now returns accessToken + refreshToken instead of token.
      */
     const persistAuth = useCallback((authResponse) => {
-        AuthService.setToken(authResponse.token);
-        setToken(authResponse.token);
+        AuthService.setToken(authResponse.accessToken);
+        AuthService.setRefreshToken(authResponse.refreshToken);
+        setToken(authResponse.accessToken);
 
         const userInfo = {
             userId: authResponse.userId,
@@ -83,9 +85,10 @@ export const AuthProvider = ({ children }) => {
     }, [persistAuth]);
 
     /**
-     * Logout: clear all stored auth data and reset state.
+     * Logout: revoke server-side refresh token, then clear all stored auth data.
      */
-    const logout = useCallback(() => {
+    const logout = useCallback(async () => {
+        await AuthService.revoke();
         AuthService.clearAuth();
         setUser(null);
         setToken(null);

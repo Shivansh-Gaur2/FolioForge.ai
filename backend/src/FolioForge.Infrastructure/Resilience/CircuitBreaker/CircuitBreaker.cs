@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using FolioForge.Infrastructure.Telemetry;
 
 namespace FolioForge.Infrastructure.Resilience.CircuitBreaker;
 
@@ -68,6 +70,13 @@ public sealed class CircuitBreaker : IDisposable
     public async Task<T> ExecuteAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken = default)
     {
         var state = State;
+
+        // Start a tracing span for circuit breaker execution
+        using var activity = FolioForgeDiagnostics.ActivitySource.StartActivity(
+            FolioForgeDiagnostics.CircuitBreakerExecute,
+            ActivityKind.Internal);
+        activity?.SetTag(FolioForgeDiagnostics.Tags.CircuitBreakerName, _name);
+        activity?.SetTag(FolioForgeDiagnostics.Tags.CircuitBreakerState, state.ToString());
 
         switch (state)
         {
@@ -237,6 +246,11 @@ public sealed class CircuitBreaker : IDisposable
                     _logger.LogError(
                         "Circuit breaker '{BreakerName}' OPENED. Will retry after {RetryAfter:O}. Previous state: {PreviousState}",
                         _name, _retryAfter, currentState);
+                    // metric
+                    FolioForgeDiagnostics.CircuitBreakerTrips.Add(1,
+                        new KeyValuePair<string, object?>("breaker_name", _name),
+                        new KeyValuePair<string, object?>("from_state", currentState.ToString()),
+                        new KeyValuePair<string, object?>("to_state", "Open"));
                     break;
 
                 case CircuitBreakerState.HalfOpen:
@@ -245,6 +259,10 @@ public sealed class CircuitBreaker : IDisposable
                     _logger.LogWarning(
                         "Circuit breaker '{BreakerName}' entering HALF-OPEN state. Allowing {MaxProbes} probe requests",
                         _name, _config.HalfOpenMaxAttempts);
+                    FolioForgeDiagnostics.CircuitBreakerTrips.Add(1,
+                        new KeyValuePair<string, object?>("breaker_name", _name),
+                        new KeyValuePair<string, object?>("from_state", currentState.ToString()),
+                        new KeyValuePair<string, object?>("to_state", "HalfOpen"));
                     break;
 
                 case CircuitBreakerState.Closed:
@@ -254,6 +272,10 @@ public sealed class CircuitBreaker : IDisposable
                     _logger.LogInformation(
                         "Circuit breaker '{BreakerName}' CLOSED. Normal operation resumed",
                         _name);
+                    FolioForgeDiagnostics.CircuitBreakerTrips.Add(1,
+                        new KeyValuePair<string, object?>("breaker_name", _name),
+                        new KeyValuePair<string, object?>("from_state", currentState.ToString()),
+                        new KeyValuePair<string, object?>("to_state", "Closed"));
                     break;
             }
 
