@@ -1,5 +1,6 @@
 using FolioForge.Infrastructure.Resilience.Bulkhead;
 using FolioForge.Infrastructure.Resilience.CircuitBreaker;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FolioForge.Api.Controllers;
@@ -9,10 +10,11 @@ namespace FolioForge.Api.Controllers;
 /// Exposes the current state of all circuit breakers and bulkhead partitions.
 ///
 /// This is invaluable for ops dashboards, alerting, and incident response.
-/// In production, consider securing this behind an internal-only route or API key.
+/// Secured behind [Authorize] — only authenticated users can inspect internal state.
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class ResilienceController : ControllerBase
 {
     private readonly ICircuitBreakerFactory _circuitBreakerFactory;

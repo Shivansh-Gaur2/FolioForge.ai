@@ -1,4 +1,6 @@
-﻿using FolioForge.Application.Common.Interfaces;
+﻿using System.Diagnostics;
+using FolioForge.Application.Common.Interfaces;
+using FolioForge.Infrastructure.Telemetry;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,6 +14,12 @@ namespace FolioForge.Infrastructure.Services
     {
         public string ExtractText(string filePath)
         {
+            // start a tracing span around PDF extraction
+            using var activity = FolioForgeDiagnostics.ActivitySource.StartActivity(
+                FolioForgeDiagnostics.ExtractPdf,
+                ActivityKind.Internal);
+            activity?.SetTag("pdf.filepath", filePath);
+
             if(!File.Exists(filePath))
             {
                 throw new FileNotFoundException($"File not found: {filePath}");

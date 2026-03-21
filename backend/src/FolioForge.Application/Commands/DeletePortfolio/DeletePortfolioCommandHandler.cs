@@ -29,7 +29,7 @@ public class DeletePortfolioCommandHandler : IRequestHandler<DeletePortfolioComm
 
         // Invalidate caches for this portfolio and user's list
         await _cache.RemoveAsync(CacheKeys.PortfolioById(request.PortfolioId), cancellationToken);
-        await _cache.RemoveAsync(CacheKeys.PortfoliosByUser(request.UserId), cancellationToken);
+        await _cache.RemoveByPrefixAsync(CacheKeys.PortfoliosByUser(request.UserId), cancellationToken);
 
         return true;
     }

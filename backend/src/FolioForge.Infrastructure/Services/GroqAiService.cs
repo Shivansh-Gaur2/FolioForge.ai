@@ -1,6 +1,8 @@
 ﻿using System.Text;
+using System.Diagnostics;
 using System.Text.Json;
 using FolioForge.Application.Common.Interfaces;
+using FolioForge.Infrastructure.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +23,13 @@ public class GroqAiService : IAiService
 
     public async Task<string> GeneratePortfolioDataAsync(string resumeText)
     {
+        // create a business-level span to group the AI call
+        using var activity = FolioForgeDiagnostics.ActivitySource.StartActivity(
+            FolioForgeDiagnostics.GeneratePortfolio,
+            ActivityKind.Internal);
+        activity?.SetTag("ai.model", "llama-3.3-70b-versatile");
+        activity?.SetTag("prompt.length", resumeText.Length);
+
         var url = "https://api.groq.com/openai/v1/chat/completions";
 
         var requestBody = new
@@ -47,10 +56,15 @@ public class GroqAiService : IAiService
             Encoding.UTF8,
             "application/json");
 
-        _httpClient.DefaultRequestHeaders.Clear();
-        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+        // Use per-request headers instead of mutating the shared HttpClient.DefaultRequestHeaders
+        // DefaultRequestHeaders is NOT thread-safe — concurrent requests would corrupt headers.
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = jsonContent
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
 
-        var response = await _httpClient.PostAsync(url, jsonContent);
+        var response = await _httpClient.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
         {

@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.IdentityModel.Tokens.Jwt;
 
 namespace FolioForge.Infrastructure.Middleware
 {
@@ -18,8 +17,12 @@ namespace FolioForge.Infrastructure.Middleware
 
     /// <summary>
     /// Middleware that resolves the current tenant. Resolution order:
-    /// 1. JWT "tenantId" claim (for authenticated users — no header needed)
+    /// 1. Validated JWT "tenantId" claim (for authenticated users — no header needed)
     /// 2. X-Tenant-Id header (for unauthenticated / public endpoints)
+    /// 
+    /// IMPORTANT: This middleware MUST be placed AFTER UseAuthentication() so that
+    /// the JWT has already been validated (signature, expiry, issuer, audience).
+    /// We read from HttpContext.User.Claims — never parse the raw token ourselves.
     /// 
     /// Tenant lookups are cached in Redis to avoid hitting the DB on every request.
     /// </summary>
@@ -61,45 +64,33 @@ namespace FolioForge.Infrastructure.Middleware
             var tenantContext = context.RequestServices.GetRequiredService<ITenantContext>();
             var cache = context.RequestServices.GetRequiredService<ICacheService>();
 
-            // ── Strategy 1: Try to resolve tenant from JWT Bearer token ──
-            var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
-            if (authHeader != null && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            // ── Strategy 1: Resolve tenant from VALIDATED JWT claims ──
+            // HttpContext.User is populated by UseAuthentication() which has already
+            // verified the token signature, expiry, issuer, and audience.
+            if (context.User.Identity?.IsAuthenticated == true)
             {
-                var tokenString = authHeader.Substring("Bearer ".Length).Trim();
-                try
-                {
-                    var handler = new JwtSecurityTokenHandler();
-                    if (handler.CanReadToken(tokenString))
-                    {
-                        var jwt = handler.ReadJwtToken(tokenString);
-                        var tenantIdClaim = jwt.Claims.FirstOrDefault(c => c.Type == "tenantId")?.Value;
+                var tenantIdClaim = context.User.FindFirst("tenantId")?.Value;
 
-                        if (tenantIdClaim != null && Guid.TryParse(tenantIdClaim, out var tenantId))
+                if (tenantIdClaim != null && Guid.TryParse(tenantIdClaim, out var tenantId))
+                {
+                    var cached = await cache.GetOrSetAsync(
+                        CacheKeys.TenantById(tenantId),
+                        async () =>
                         {
-                            var cached = await cache.GetOrSetAsync(
-                                CacheKeys.TenantById(tenantId),
-                                async () =>
-                                {
-                                    var t = await dbContext.Tenants
-                                        .IgnoreQueryFilters()
-                                        .FirstOrDefaultAsync(t => t.Id == tenantId);
-                                    return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
-                                },
-                                CacheKeys.TenantTtl);
+                            var t = await dbContext.Tenants
+                                .IgnoreQueryFilters()
+                                .FirstOrDefaultAsync(t => t.Id == tenantId);
+                            return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
+                        },
+                        CacheKeys.TenantTtl);
 
-                            if (cached != null && cached.IsActive)
-                            {
-                                tenantContext.SetTenant(cached.Id, cached.Identifier);
-                                _logger.LogDebug("Tenant resolved from JWT (cached): {TenantIdentifier}", cached.Identifier);
-                                await _next(context);
-                                return;
-                            }
-                        }
+                    if (cached != null && cached.IsActive)
+                    {
+                        tenantContext.SetTenant(cached.Id, cached.Identifier);
+                        _logger.LogDebug("Tenant resolved from JWT claims: {TenantIdentifier}", cached.Identifier);
+                        await _next(context);
+                        return;
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to parse JWT for tenant resolution, falling back to header.");
                 }
             }
 

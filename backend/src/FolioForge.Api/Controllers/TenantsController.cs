@@ -1,7 +1,9 @@
 using FolioForge.Application.Common.Interfaces;
 using FolioForge.Domain.Entities;
 using FolioForge.Infrastructure.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 
 namespace FolioForge.Api.Controllers
 {
@@ -9,9 +11,11 @@ namespace FolioForge.Api.Controllers
     /// Controller for tenant management operations.
     /// These endpoints are EXCLUDED from tenant middleware (no X-Tenant-Id required).
     /// Rate limited with "Strict" policy to prevent tenant enumeration.
+    /// Tenant creation requires authentication; only authorized users can provision tenants.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     [RateLimit("Strict")]
     public class TenantsController : ControllerBase
     {
@@ -65,5 +69,10 @@ namespace FolioForge.Api.Controllers
         }
     }
 
-    public record CreateTenantRequest(string Name, string Identifier);
+    public record CreateTenantRequest(
+        [Required, StringLength(100, MinimumLength = 2)] string Name,
+        [Required, StringLength(50, MinimumLength = 3), RegularExpression(@"^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+            ErrorMessage = "Identifier must be lowercase alphanumeric with hyphens, e.g. 'my-company'.")]
+        string Identifier
+    );
 }

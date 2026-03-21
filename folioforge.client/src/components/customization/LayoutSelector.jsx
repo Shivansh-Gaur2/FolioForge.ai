@@ -8,11 +8,6 @@ const LAYOUTS = [
         description: 'Content flows in one column, great for storytelling',
     },
     {
-        id: 'two-column',
-        name: 'Two Column',
-        description: 'Smart grid — compact sections pair side-by-side, wide ones span full',
-    },
-    {
         id: 'sidebar',
         name: 'Sidebar',
         description: 'Fixed sidebar with scrolling main content',
@@ -53,16 +48,6 @@ export const LayoutSelector = () => {
                                         <div className="h-2 bg-blue-400 rounded" />
                                         <div className="h-2 bg-slate-600 rounded" />
                                         <div className="h-2 bg-slate-600 rounded" />
-                                        <div className="h-2 bg-slate-600 rounded" />
-                                    </div>
-                                )}
-                                {l.id === 'two-column' && (
-                                    <div className="flex flex-col gap-1 p-1.5 h-full">
-                                        <div className="h-2 bg-blue-400 rounded" />
-                                        <div className="flex gap-1">
-                                            <div className="flex-1 h-3 bg-slate-600 rounded" />
-                                            <div className="flex-1 h-3 bg-slate-600 rounded" />
-                                        </div>
                                         <div className="h-2 bg-slate-600 rounded" />
                                     </div>
                                 )}

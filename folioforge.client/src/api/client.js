@@ -56,7 +56,7 @@ apiClient.interceptors.response.use(
         // Unwrap data for cleaner consumption
         return response.data;
     },
-    (error) => {
+    async (error) => {
         // Network errors (no response from server)
         if (!error.response) {
             if (config.features.debugLogging) {
@@ -76,9 +76,33 @@ apiClient.interceptors.response.use(
             console.error(`[API] Error ${status}:`, data);
         }
 
-        // Auto-clear auth on 401 (token expired / invalid)
-        if (status === 401) {
+        // Auto-refresh on 401 (access token expired)
+        // Skip refresh attempts for auth endpoints to avoid infinite loops
+        const originalRequest = error.config;
+        if (status === 401 && !originalRequest._retry && !originalRequest.url?.includes('/auth/')) {
+            originalRequest._retry = true;
+
+            try {
+                const refreshToken = localStorage.getItem('ff_refresh_token');
+                const accessToken = localStorage.getItem('ff_token');
+                if (refreshToken && accessToken) {
+                    const refreshResponse = await apiClient.post('/auth/refresh', {
+                        accessToken,
+                        refreshToken,
+                    });
+                    // Store new tokens
+                    localStorage.setItem('ff_token', refreshResponse.accessToken);
+                    localStorage.setItem('ff_refresh_token', refreshResponse.refreshToken);
+                    // Retry the original request with the new token
+                    originalRequest.headers['Authorization'] = `Bearer ${refreshResponse.accessToken}`;
+                    return apiClient(originalRequest);
+                }
+            } catch {
+                // Refresh failed — clear auth and force re-login
+            }
+
             localStorage.removeItem('ff_token');
+            localStorage.removeItem('ff_refresh_token');
             localStorage.removeItem('ff_user');
         }
 

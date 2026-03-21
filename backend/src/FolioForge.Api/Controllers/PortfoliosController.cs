@@ -64,14 +64,14 @@ namespace FolioForge.Api.Controllers
         }
 
         /// <summary>
-        /// List all portfolios for the current authenticated user.
-        /// GET /api/portfolios/mine
+        /// List portfolios for the current authenticated user with pagination.
+        /// GET /api/portfolios/mine?page=1&amp;pageSize=10
         /// </summary>
         [HttpGet("mine")]
-        public async Task<IActionResult> ListMine()
+        public async Task<IActionResult> ListMine([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
             var userId = GetUserId();
-            var query = new GetPortfoliosByUserQuery(userId);
+            var query = new GetPortfoliosByUserQuery(userId, page, pageSize);
             var result = await _mediator.Send(query);
             return Ok(result);
         }
@@ -109,31 +109,45 @@ namespace FolioForge.Api.Controllers
             return NoContent();
         }
 
+        private static readonly string[] AllowedExtensions = { ".pdf" };
+        private const long MaxFileSizeBytes = 10 * 1024 * 1024; // 10 MB
+
         [HttpPost("{id}/upload-resume")]
         [RateLimit("Upload")]
         [Bulkhead("Upload")]
+        [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB hard limit at Kestrel level
         public async Task<IActionResult> UploadResume(Guid id, IFormFile file)
         {
             if (file == null || file.Length == 0)
-            {
-                return BadRequest("No file uploaded.");
-            }
+                return BadRequest(new { error = "No file uploaded." });
+
+            if (file.Length > MaxFileSizeBytes)
+                return BadRequest(new { error = $"File size exceeds the {MaxFileSizeBytes / (1024 * 1024)} MB limit." });
+
+            var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(extension) || !AllowedExtensions.Contains(extension))
+                return BadRequest(new { error = "Only PDF files are accepted." });
+
+            // Verify the file starts with %PDF magic bytes (not just the extension)
+            using var headerStream = file.OpenReadStream();
+            var header = new byte[5];
+            var bytesRead = await headerStream.ReadAsync(header, 0, header.Length);
+            if (bytesRead < 5 || System.Text.Encoding.ASCII.GetString(header) != "%PDF-")
+                return BadRequest(new { error = "File content is not a valid PDF." });
+
             var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-            if(!Directory.Exists(folderPath))
-            {
+            if (!Directory.Exists(folderPath))
                 Directory.CreateDirectory(folderPath);
-            }
 
             var filePath = Path.Combine(folderPath, $"{id}_{Guid.NewGuid()}.pdf");
-            using ( var stream = new FileStream(filePath, FileMode.Create))
+            using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 await file.CopyToAsync(stream);
             }
 
             await _publisher.PublishAsync(new ResumeUploadedEvent(id, filePath));
 
-            // 3. Return 202 Accepted
-            // This tells the frontend: "We got it. We are working on it."
+            // Return 202 Accepted — tells the frontend: "We got it. We are working on it."
             return Accepted(new { message = "Resume queued for processing", portfolioId = id });
         }
 

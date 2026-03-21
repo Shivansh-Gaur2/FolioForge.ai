@@ -54,7 +54,7 @@ namespace FolioForge.Infrastructure
             services.AddScoped<ITenantRepository, TenantRepository>();
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IAuthService, JwtAuthService>();
-            services.AddScoped<IEventPublisher, RabbitMqEventPublisher>();
+            services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
             services.AddScoped<IPdfService, PdfService>();
             services.AddHttpClient<IAiService, GroqAiService>();
 

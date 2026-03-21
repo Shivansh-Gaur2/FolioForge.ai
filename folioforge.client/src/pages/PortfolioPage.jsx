@@ -7,6 +7,7 @@ import { ParticleHero } from '../features/portfolio/ParticleHero';
 import { AnimatedSkillsSection } from '../features/portfolio/AnimatedSkillsSection';
 import { AnimatedTimelineSection } from '../features/portfolio/AnimatedTimelineSection';
 import { AnimatedProjectsSection } from '../features/portfolio/AnimatedProjectsSection';
+import { AnimatedEducationSection } from '../features/portfolio/AnimatedEducationSection';
 import { ContactSection } from '../features/portfolio/ContactSection';
 
 /**
@@ -18,6 +19,7 @@ const SECTION_RENDERERS = {
     timeline:  (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
     projects:  (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
     contact:   (section) => <ContactSection key={section.id} variant={section.variant} />,
+    education: (section) => <AnimatedEducationSection key={section.id} content={section.content} variant={section.variant} />,
 };
 
 /** Section-type icons used for sidebar navigation */
@@ -96,16 +98,9 @@ const PortfolioContent = ({ portfolio }) => {
         );
     };
 
-    // ── Two-column: classify sections as full-width or half-width ──
-    // Wide/complex sections span both columns; compact ones sit side-by-side
-    const FULL_WIDTH_TYPES = ['projects', 'timeline', 'contact'];
-    const isFullWidth = (s) => FULL_WIDTH_TYPES.includes(s.sectionType?.toLowerCase());
-
     // ── Layout class for the body sections wrapper ─────────────
     const layoutClass =
-        layout === 'two-column' ? 'grid grid-cols-1 md:grid-cols-2 gap-0' :
-        layout === 'sidebar'    ? 'flex' :
-                                  'flex flex-col';
+        layout === 'sidebar' ? 'flex' : 'flex flex-col';
 
     return (
         <motion.div
@@ -170,20 +165,9 @@ const PortfolioContent = ({ portfolio }) => {
                 )}
 
                 {/* Main content area */}
-                {layout === 'two-column' ? (
-                    // Smart two-column: full-width sections span both cols,
-                    // compact sections sit side-by-side
-                    bodySections.map(section =>
-                        renderSection(
-                            section,
-                            isFullWidth(section) ? 'md:col-span-2' : ''
-                        )
-                    )
-                ) : (
-                    <main className="flex-1 min-w-0">
-                        {bodySections.map(s => renderSection(s))}
-                    </main>
-                )}
+                <main className="flex-1 min-w-0">
+                    {bodySections.map(s => renderSection(s))}
+                </main>
             </div>
 
             {/* Footer */}
