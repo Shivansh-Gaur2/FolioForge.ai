@@ -130,11 +130,15 @@ graph LR
 | **Architecture** | Clean Architecture + CQRS | — | Separation of concerns, testability |
 | **Database** | SQL Server | — | Relational data with JSON column support |
 | **ORM** | Entity Framework Core | 9.0 | Type-safe database access with global query filters |
-| **Authentication** | JWT Bearer | — | Stateless token-based auth with BCrypt password hashing |
-| **Messaging** | RabbitMQ | 3.x | Async job processing via event-driven architecture |
+| **Authentication** | JWT Bearer + Refresh Tokens | — | Short-lived access tokens (15 min) + rotating long-lived refresh tokens (7 days) |
+| **Messaging** | RabbitMQ | 3.x | Async job processing via event-driven architecture (durable, manual ACK) |
 | **PDF Parsing** | PdfPig | — | Extract text from resume PDFs |
 | **AI/LLM** | Groq (Llama 3.3), Gemini 2.0, OpenAI | — | Resume parsing & content generation |
 | **CQRS** | MediatR | 14.x | Command/Query separation |
+| **Cache** | Redis (StackExchange) | — | Distributed caching (cache-aside) + Token Bucket rate limiting |
+| **Rate Limiting** | Redis Token Bucket | — | Per-client distributed rate limiting across all API instances |
+| **Resilience** | Custom Circuit Breaker + Bulkhead | — | Fault tolerance for AI service and per-endpoint concurrency isolation |
+| **Observability** | OpenTelemetry | — | Distributed tracing (Jaeger via OTLP) + metrics (Prometheus) |
 
 ### Frontend
 
@@ -146,8 +150,8 @@ graph LR
 | **Animations** | Framer Motion | 12.x | Scroll-triggered transitions, particle effects |
 | **HTTP Client** | Axios | 1.13 | Interceptor-based API communication with JWT injection |
 | **Routing** | React Router | 7.13 | Client-side routing with protected routes |
-| **Particles** | tsParticles | 3.x | Interactive particle hero background |
-| **Theming** | Context API | — | Dark/Light mode support with system preference detection |
+| **Particles** | tsParticles | 3.x | Interactive particle hero background || **State Management** | Zustand | 5.x | Portfolio customization store with live preview |
+| **Icons** | Lucide React | 0.575 | Icon system for UI components || **Theming** | Context API | — | Dark/Light mode support with system preference detection |
 
 ### DevOps & CI/CD
 
@@ -202,30 +206,40 @@ FolioForge.ai/
 | Feature | Description |
 |---------|-------------|
 | **Multi-Tenancy** | Shared-database, row-level tenant isolation via EF Core global query filters |
-| **JWT Authentication** | Register, Login, /me endpoints with BCrypt hashing and 24h token expiry |
+| **JWT Authentication + Refresh Tokens** | Register, Login, Refresh, Revoke endpoints; access tokens (15 min) + rotating refresh tokens (7 days); BCrypt password hashing |
 | **Tenant Middleware** | Automatic tenant resolution from JWT claims or X-Tenant-Id header |
 | **Clean Architecture** | 4-layer separation (API, Application, Domain, Infrastructure) |
-| **CQRS with MediatR** | Command/Query separation for portfolio operations |
-| **Event-Driven Processing** | RabbitMQ-based async resume processing |
+| **CQRS with MediatR** | Commands (Create, Delete, UpdateCustomization) and Queries (GetById, GetByUser paginated) via MediatR |
+| **Event-Driven Processing** | RabbitMQ-based async resume processing with durable queues, prefetch, and manual ACK/NACK |
 | **AI-Powered Parsing** | Groq (Llama 3.3), Gemini 2.0 Flash, OpenAI integration |
-| **PDF Text Extraction** | PdfPig-based resume text extraction |
-| **Generic Widget System** | Flexible JSON-based section storage (About, Skills, Timeline, Projects) |
+| **PDF Text Extraction** | PdfPig-based resume text extraction with `%PDF-` magic byte validation |
+| **Generic Widget System** | Flexible JSON-based section storage (About, Skills, Timeline, Projects, Education) |
 | **Smart Bullet Points** | AI extracts achievements as structured arrays, not paragraphs |
+| **Redis Distributed Cache** | Cache-aside pattern via `ICacheService` / `RedisCacheService`; default 30-min TTL |
+| **Distributed Rate Limiting** | Redis Token Bucket algorithm — per-client, multi-instance safe (Lua atomic script); `Auth`, `Upload`, `Default` policies |
+| **Bulkhead Isolation** | Per-endpoint concurrency partitions with queue; `Auth` and `Upload` endpoints isolated |
+| **Circuit Breaker** | `ResilientAiServiceDecorator` wraps AI calls; opens on consecutive failures, fast-fails callers |
+| **OpenTelemetry Observability** | Distributed tracing exported to Jaeger (OTLP gRPC); Prometheus metrics endpoint; smart sampler promotes error spans |
+| **Health Checks** | `/health` endpoint checking SQL Server, Redis, and RabbitMQ |
+| **Portfolio Customization Editor** | Live-preview split-screen editor with color picker, font selector, layout selector, section manager, theme presets |
+| **Zustand State Management** | `useCustomizationStore` manages editor state, dirty tracking, and optimistic updates |
 | **Protected Routes** | Frontend route guards with auth bootstrapping from localStorage |
 | **React Portfolio Viewer** | Animated, responsive portfolio display with scroll-triggered reveals |
 | **Dark/Light Theme** | System-aware theme switching with localStorage persistence |
 | **Particle Hero** | Interactive tsParticles background with gradient text |
-| **Animated Sections** | Framer Motion scroll animations (fade-in, slide, stagger) |
+| **Animated Sections** | Framer Motion scroll animations (fade-in, slide, stagger) for Skills, Timeline, Projects, Education |
+| **Unit Tests** | Domain entity tests, Circuit Breaker tests, JWT service tests, Repository integration tests |
 | **CI/CD Pipelines** | GitHub Actions for CI, PR checks (path-filtered), and deployment |
 
 ### 🔜 Planned
 
-- [ ] Drag-and-drop section editor
+- [ ] Drag-and-drop section reordering
 - [ ] Custom domain support
 - [ ] PDF resume download from portfolio
 - [ ] Analytics dashboard
 - [ ] Role-based access control (RBAC)
 - [ ] Subdomain-based tenant routing
+- [ ] AI section regeneration on-demand
 
 ---
 
@@ -233,25 +247,31 @@ FolioForge.ai/
 
 ### Authentication Flow
 
-```
-Register → POST /api/auth/register { email, fullName, password, tenantIdentifier }
-                ↓
-         Validate tenant exists & is active
-         Check email globally unique
-         BCrypt hash password
-         Create User with TenantId
-         Generate JWT (sub, email, fullName, tenantId)
-                ↓
-         ← { token, userId, email, fullName, tenantId, tenantIdentifier }
+FolioForge uses short-lived **access tokens** (15 min) paired with long-lived **refresh tokens** (7 days, stored server-side with rotation).
 
-Login → POST /api/auth/login { email, password }
+```
+Register / Login
+  →  POST /api/auth/register  |  POST /api/auth/login
                 ↓
-         Lookup user across all tenants (bypasses query filters)
-         Verify BCrypt hash
-         Resolve tenant from user's TenantId
-         Generate JWT
+  Validate tenant → BCrypt verify / hash → Generate pair
                 ↓
-         ← { token, userId, email, fullName, tenantId, tenantIdentifier }
+  ← { accessToken (15 min JWT), refreshToken (opaque, 7 days),
+      userId, email, fullName, tenantId, tenantIdentifier }
+
+Refresh (when accessToken expires)
+  →  POST /api/auth/refresh { accessToken (expired ok), refreshToken }
+                ↓
+  Validate JWT signature (ignore expiry) → Lookup refreshToken in DB
+  If refreshToken already revoked → revoke ALL user tokens (theft detection)
+                ↓
+  Rotate: revoke old refreshToken, issue new pair
+  ← { accessToken (new), refreshToken (new), ... }
+
+Revoke (logout)
+  →  POST /api/auth/revoke { refreshToken }
+                ↓
+  Mark refreshToken as revoked in DB
+  ← 204 No Content
 ```
 
 ### Tenant Data Isolation
@@ -270,7 +290,9 @@ Login → POST /api/auth/login { email, password }
 | `fullName` | User display name |
 | `tenantId` | Tenant ID for data isolation |
 | `jti` | Unique token identifier |
-| `exp` | Expiration (24 hours) |
+| `exp` | Expiration (15 minutes for access tokens) |
+
+> Refresh tokens are opaque strings stored in the `refresh_tokens` table, not inside the JWT. On each use the old token is revoked and a new pair is issued (rotation). Reuse of a revoked token triggers revocation of all tokens for that user.
 
 ---
 
@@ -282,6 +304,7 @@ Login → POST /api/auth/login { email, password }
 - [Node.js 22+](https://nodejs.org/)
 - [SQL Server](https://www.microsoft.com/sql-server) (or LocalDB / Docker)
 - [RabbitMQ](https://www.rabbitmq.com/) (or Docker)
+- [Redis](https://redis.io/) (or Docker) — required for rate limiting and caching
 
 ### Quick Start
 
@@ -307,6 +330,11 @@ docker run --name folioforge-rabbit \
   -p 5672:5672 \
   -p 15672:15672 \
   -d rabbitmq:3-management
+
+# Start Redis
+docker run --name folioforge-redis \
+  -p 6379:6379 \
+  -d redis:7-alpine
 ```
 
 #### 3. Configure Backend
@@ -316,13 +344,18 @@ Update `backend/src/FolioForge.Api/appsettings.json`:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Database=folioforge;Integrated Security=True;TrustServerCertificate=True"
+    "DefaultConnection": "Server=localhost;Database=folioforge;Integrated Security=True;TrustServerCertificate=True",
+    "Redis": "localhost:6379"
   },
   "Jwt": {
     "Secret": "YourSuperSecretKeyAtLeast32CharsLong!!",
     "Issuer": "FolioForge",
     "Audience": "FolioForge.Client",
-    "ExpirationMinutes": "1440"
+    "ExpirationMinutes": "15",
+    "RefreshTokenExpirationDays": "7"
+  },
+  "RabbitMq": {
+    "HostName": "localhost"
   },
   "Groq": {
     "ApiKey": "your-groq-api-key"
@@ -363,6 +396,8 @@ npm run dev
 |---------|-----|
 | **Frontend** | http://localhost:5173 |
 | **API Swagger** | http://localhost:5090/swagger |
+| **Health Check** | http://localhost:5090/health |
+| **Prometheus Metrics** | http://localhost:5090/metrics |
 | **RabbitMQ Dashboard** | http://localhost:15672 (guest/guest) |
 
 #### 8. Create a Tenant & User
@@ -389,6 +424,8 @@ curl -X POST http://localhost:5090/api/auth/register \
 |--------|----------|------|-------------|
 | `POST` | `/api/auth/register` | — | Register user under a tenant |
 | `POST` | `/api/auth/login` | — | Login with email/password |
+| `POST` | `/api/auth/refresh` | — | Exchange expired access token + refresh token for a new pair |
+| `POST` | `/api/auth/revoke` | JWT | Revoke a refresh token (logout) |
 | `GET` | `/api/auth/me` | JWT | Get current user profile |
 
 ### Tenant Management
@@ -403,9 +440,20 @@ curl -X POST http://localhost:5090/api/auth/register \
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `POST` | `/api/portfolios` | JWT | Create new portfolio |
+| `GET` | `/api/portfolios/mine` | JWT | List portfolios for the current user (paginated) |
 | `GET` | `/api/portfolios/{id}` | JWT | Get portfolio by ID (with sections) |
 | `GET` | `/api/portfolios/{slug}` | JWT | Get portfolio by slug |
-| `POST` | `/api/portfolios/{id}/upload-resume` | JWT | Upload PDF resume for AI processing |
+| `DELETE` | `/api/portfolios/{id}` | JWT | Delete portfolio (owner only) |
+| `PUT` | `/api/portfolios/{id}/customization` | JWT | Update theme, colors, fonts, section visibility/order |
+| `POST` | `/api/portfolios/{id}/upload-resume` | JWT | Upload PDF resume for AI processing (rate limited) |
+
+### Observability
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/resilience` | JWT | Live state of all circuit breakers and bulkhead partitions |
+| `GET` | `/health` | — | Health check (SQL Server, Redis, RabbitMQ) |
+| `GET` | `/metrics` | — | Prometheus metrics scrape endpoint |
 
 ### Request/Response Examples
 
@@ -416,7 +464,8 @@ curl -X POST http://localhost:5090/api/auth/register \
   -d '{"email": "john@example.com", "fullName": "John Doe", "password": "Password123!", "tenantIdentifier": "my-workspace"}'
 
 # Response:
-# { "token": "eyJ...", "userId": "...", "email": "john@example.com",
+# { "accessToken": "eyJ...", "refreshToken": "<opaque>",
+#   "userId": "...", "email": "john@example.com",
 #   "fullName": "John Doe", "tenantId": "...", "tenantIdentifier": "my-workspace" }
 ```
 
@@ -467,9 +516,11 @@ curl -X POST http://localhost:5090/api/portfolios/{id}/upload-resume \
 | **Repository Pattern** | Abstract data access behind interfaces |
 | **CQRS** | Separate read (queries) from write (commands) via MediatR |
 | **Mediator Pattern** | Decouple request handling with `IRequest`/`IRequestHandler` |
-| **Factory Pattern** | Create PortfolioSection with `Create()` static method |
+| **Decorator Pattern** | `ResilientAiServiceDecorator` wraps `IAiService` with circuit breaker, same interface |
+| **Factory Pattern** | Create PortfolioSection with `Create()` static method; `ICircuitBreakerFactory` for named breakers |
 | **Result Pattern** | Type-safe success/failure handling without exceptions |
 | **Event-Driven** | Async resume processing via RabbitMQ publish/subscribe |
+| **Token Bucket** | Redis-backed, atomically-enforced rate limiting per client per policy |
 | **Global Query Filters** | Automatic tenant scoping at the ORM level |
 | **Marker Interface** | `ITenantEntity` for polymorphic tenant assignment in `SaveChangesAsync` |
 

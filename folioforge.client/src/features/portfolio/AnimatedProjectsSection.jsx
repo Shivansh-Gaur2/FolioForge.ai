@@ -291,23 +291,27 @@ export const AnimatedProjectsSection = ({ content, variant = 'default' }) => {
     return (
         <section id="projects" className="py-24 relative overflow-hidden">
             {/* Background */}
-            <div className="absolute inset-0 bg-gradient-to-b from-white via-slate-50 to-white
-                          dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
+            <div
+                className="absolute inset-0"
+                style={{
+                    backgroundImage: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 90%, var(--color-secondary) 10%), color-mix(in srgb, var(--color-bg) 95%, var(--color-primary) 5%), var(--color-bg))',
+                }}
+            />
             <div className="absolute top-1/3 left-0 w-full h-px bg-gradient-to-r from-transparent via-slate-200 dark:via-slate-700 to-transparent" />
 
             <div className="relative max-w-6xl mx-auto px-6">
                 <ScrollReveal>
                     <div className="text-center mb-16">
-                        <span className="inline-block px-4 py-2 rounded-full 
+                        <span className="section-badge inline-block px-4 py-2 rounded-full 
                                        bg-emerald-100 dark:bg-emerald-900/30 
                                        text-emerald-600 dark:text-emerald-400
                                        text-sm font-semibold mb-4">
                             Featured Work
                         </span>
-                        <h2 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
+                        <h2 className="section-heading text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
                             Projects
                         </h2>
-                        <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+                        <p className="section-subtitle text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
                             Handcrafted solutions that push boundaries
                         </p>
                     </div>

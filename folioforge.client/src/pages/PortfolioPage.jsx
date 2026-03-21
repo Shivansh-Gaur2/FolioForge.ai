@@ -69,6 +69,10 @@ const PortfolioContent = ({ portfolio }) => {
     );
 
     // Build dynamic nav items from visible sections for FloatingNav
+    const hasContactSection = bodySections.some(
+        s => s.sectionType?.toLowerCase() === 'contact'
+    );
+
     const navItems = useMemo(() => {
         const items = [{ id: 'hero', label: 'Home', icon: '🏠' }];
         bodySections.forEach(s => {
@@ -79,6 +83,9 @@ const PortfolioContent = ({ portfolio }) => {
                 icon: SECTION_ICONS[type] || '📄',
             });
         });
+        if (!items.some(i => i.id === 'contact')) {
+            items.push({ id: 'contact', label: 'Contact', icon: SECTION_ICONS.contact });
+        }
         return items;
     }, [bodySections]);
 
@@ -106,7 +113,7 @@ const PortfolioContent = ({ portfolio }) => {
         <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="min-h-screen transition-colors duration-300"
+            className="portfolio-root min-h-screen transition-colors duration-300"
             style={{
                 backgroundColor,
                 color: textColor,
@@ -119,6 +126,26 @@ const PortfolioContent = ({ portfolio }) => {
                 '--font-body': fontBody,
             }}
         >
+            {/* Inject themed utility classes that override Tailwind defaults */}
+            <style>{`
+                .portfolio-root .section-heading {
+                    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+                    color: var(--color-primary) !important;
+                }
+                .portfolio-root .section-badge {
+                    background: color-mix(in srgb, var(--color-primary) 15%, transparent) !important;
+                    color: var(--color-primary) !important;
+                }
+                .portfolio-root .section-subtitle {
+                    color: color-mix(in srgb, var(--color-text) 60%, transparent) !important;
+                }
+                .portfolio-root .accent-text {
+                    color: var(--color-primary) !important;
+                }
+                .portfolio-root .accent-bg {
+                    background-color: var(--color-primary) !important;
+                }
+            `}</style>
             {/* Floating Navigation – dynamic items */}
             <FloatingNav items={navItems} />
 
@@ -167,6 +194,11 @@ const PortfolioContent = ({ portfolio }) => {
                 {/* Main content area */}
                 <main className="flex-1 min-w-0">
                     {bodySections.map(s => renderSection(s))}
+                    {!hasContactSection && (
+                        <div id="contact">
+                            <ContactSection variant="default" />
+                        </div>
+                    )}
                 </main>
             </div>
 
@@ -178,7 +210,10 @@ const PortfolioContent = ({ portfolio }) => {
                         whileInView={{ opacity: 1, y: 0 }}
                         className="mb-6"
                     >
-                        <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                        <h3
+                            className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400"
+                            style={{ fontFamily: `var(--font-heading), ui-sans-serif, system-ui, sans-serif`, backgroundImage: `linear-gradient(to right, ${primaryColor}, ${secondaryColor})` }}
+                        >
                             {portfolio.title}
                         </h3>
                     </motion.div>

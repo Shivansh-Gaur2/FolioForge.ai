@@ -23,20 +23,31 @@ This layer contains the application's business logic orchestration. It defines *
 ```
 FolioForge.Application/
 ├── Commands/
-│   └── CreatePortfolio/
-│       ├── CreatePortfolioCommand.cs        # Command definition
-│       └── CreatePortfolioCommandHandler.cs # Command handler (uses ITenantContext)
+│   ├── CreatePortfolio/
+│   │   ├── CreatePortfolioCommand.cs        # Command definition
+│   │   └── CreatePortfolioCommandHandler.cs # Command handler (uses ITenantContext)
+│   ├── DeletePortfolio/
+│   │   ├── DeletePortfolioCommand.cs        # Command definition
+│   │   └── DeletePortfolioCommandHandler.cs # Owner-only delete, returns bool
+│   └── UpdateCustomization/
+│       ├── UpdateCustomizationCommand.cs    # Theme/section update command
+│       └── UpdateCustomizationCommandHandler.cs
 ├── Portfolios/
 │   └── Queries/
 │       ├── GetPortfolioByIdQuery.cs         # Query definition
-│       └── GetPortfolioByIdHandler.cs       # Query handler
+│       ├── GetPortfolioByIdHandler.cs       # Query handler
+│       ├── GetPortfoliosByUserQuery.cs      # Paginated list by userId
+│       └── GetPortfoliosByUserHandler.cs
 ├── Common/
 │   ├── Events/
 │   │   └── ResumeUploadedEvent.cs           # Domain events
+│   ├── RateLimiting/
+│   │   └── IRateLimiter.cs                  # Rate limiter abstraction
 │   └── Interfaces/
 │       ├── IAiService.cs                    # AI service contract
-│       ├── IApplicationDbContext.cs         # DbContext contract (4 DbSets)
-│       ├── IAuthService.cs                  # JWT token generation contract
+│       ├── IApplicationDbContext.cs         # DbContext contract (5 DbSets incl. RefreshTokens)
+│       ├── IAuthService.cs                  # JWT token generation + refresh helpers contract
+│       ├── ICacheService.cs                 # Distributed cache contract
 │       ├── IPdfService.cs                   # PDF extraction contract
 │       ├── ITenantContext.cs                # Scoped tenant context
 │       ├── ITenantRepository.cs             # Tenant data access contract
@@ -90,65 +101,47 @@ We use **MediatR** to implement the Command Query Responsibility Segregation (CQ
 **Purpose:** Create a new portfolio for a user.
 
 ```csharp
-// Command Definition (Immutable Record)
-public record CreatePortfolioCommand(
-    Guid UserId, 
-    string Title, 
-    string DesiredSlug
-) : IRequest<Result<Guid>>;
+public record CreatePortfolioCommand(Guid UserId, string Title, string DesiredSlug)
+    : IRequest<Result<Guid>>;
 ```
 
-**Handler Implementation:**
+**Flow:** validate slug uniqueness → create `Portfolio` entity with tenant from `ITenantContext` → add default section → persist.
+
+---
+
+### DeletePortfolioCommand
+
+**Purpose:** Delete a portfolio, ensuring only the owning user can do so.
 
 ```csharp
-public class CreatePortfolioCommandHandler : IRequestHandler<CreatePortfolioCommand, Result<Guid>>
-{
-    private readonly IPortfolioRepository _repository;
-    private readonly ITenantContext _tenantContext;
-
-    public CreatePortfolioCommandHandler(IPortfolioRepository repository, ITenantContext tenantContext)
-    {
-        _repository = repository;
-        _tenantContext = tenantContext;
-    }
-
-    public async Task<Result<Guid>> Handle(CreatePortfolioCommand request, CancellationToken ct)
-    {
-        // 1. Business Rule: Check slug uniqueness (within tenant scope)
-        var existing = await _repository.GetBySlugAsync(request.DesiredSlug);
-        if (existing != null)
-        {
-            return Result<Guid>.Failure($"The URL '{request.DesiredSlug}' is already taken.");
-        }
-
-        // 2. Create domain entity with tenant context
-        var portfolio = new Portfolio(
-            request.UserId, 
-            _tenantContext.TenantId,  // Auto-injected from middleware
-            request.DesiredSlug, 
-            request.Title
-        );
-
-        // 3. Add default section
-        var defaultBio = new { text = "Welcome to my portfolio! I am a software engineer..." };
-        portfolio.AddSection(PortfolioSection.Create("Markdown", 0, defaultBio));
-
-        // 4. Persist
-        await _repository.AddAsync(portfolio);
-        await _repository.SaveChangesAsync();
-
-        // 5. Return success with new ID
-        return Result<Guid>.Success(portfolio.Id);
-    }
-}
+public record DeletePortfolioCommand(Guid PortfolioId, Guid UserId)
+    : IRequest<bool>;
 ```
 
-**Key Points:**
-- Uses `Result<T>` pattern for explicit success/failure handling
-- Validates business rules before creating entity
-- Injects `ITenantContext` to auto-assign TenantId from the current request scope
-- Adds default section for new portfolios
-- Repository handles persistence details
+Returns `false` if the portfolio does not exist or the `UserId` does not match → controller returns `404 Not Found`.
+
+---
+
+### UpdateCustomizationCommand
+
+**Purpose:** Update a portfolio's theme (colors, fonts, layout) and section visibility/order.
+
+```csharp
+public record UpdateCustomizationCommand(
+    Guid PortfolioId,
+    Guid UserId,
+    string PrimaryColor,
+    string SecondaryColor,
+    string BackgroundColor,
+    string TextColor,
+    string FontHeading,
+    string FontBody,
+    string Layout,
+    IReadOnlyList<SectionUpdateDto> Sections
+) : IRequest<bool>;
+```
+
+The handler updates the `ThemeConfig` value object on the portfolio and applies `sortOrder`/`isVisible`/`variant` changes to each section, then saves.
 
 ---
 
@@ -156,66 +149,26 @@ public class CreatePortfolioCommandHandler : IRequestHandler<CreatePortfolioComm
 
 ### GetPortfolioByIdQuery
 
-**Purpose:** Fetch a portfolio with all its sections for display.
+**Purpose:** Fetch a single portfolio with all its sections by ID.
 
 ```csharp
-// Query Definition
 public record GetPortfolioByIdQuery(Guid Id) : IRequest<PortfolioDto?>;
 ```
 
-**Handler Implementation:**
+Handler uses `IApplicationDbContext` directly (no repository) for a simple EF Core read with `Include(p => p.Sections)`, then maps to `PortfolioDto`.
+
+---
+
+### GetPortfoliosByUserQuery
+
+**Purpose:** Paginated list of portfolios owned by the current user.
 
 ```csharp
-public class GetPortfolioByIdHandler : IRequestHandler<GetPortfolioByIdQuery, PortfolioDto?>
-{
-    private readonly IApplicationDbContext _context;
-
-    public GetPortfolioByIdHandler(IApplicationDbContext context)
-    {
-        _context = context;
-    }
-
-    public async Task<PortfolioDto?> Handle(GetPortfolioByIdQuery request, CancellationToken ct)
-    {
-        // 1. Fetch with eager loading
-        var entity = await _context.Portfolios
-            .Include(p => p.Sections)  // CRITICAL: Load related sections
-            .FirstOrDefaultAsync(p => p.Id == request.Id, ct);
-
-        if (entity == null) return null;
-
-        // 2. Map to DTO
-        return new PortfolioDto
-        {
-            Id = entity.Id,
-            Title = entity.Title,
-            Slug = entity.Slug,
-            Theme = new ThemeConfigDto
-            {
-                Name = entity.Theme.Name,
-                PrimaryColor = entity.Theme.PrimaryColor,
-                FontBody = entity.Theme.FontBody
-            },
-            Sections = entity.Sections.Select(s => new PortfolioSectionDto
-            {
-                Id = s.Id,
-                SectionType = s.SectionType,
-                Content = s.Content,
-                SortOrder = s.SortOrder
-            }).ToList()
-        };
-    }
-}
+public record GetPortfoliosByUserQuery(Guid UserId, int Page, int PageSize)
+    : IRequest<PagedResult<PortfolioDto>>;
 ```
 
-**Why Query Uses DbContext Directly?**
-
-| Commands | Queries |
-|----------|---------|
-| Complex business logic | Simple data retrieval |
-| Require domain entities | Return DTOs directly |
-| Use repositories | Use DbContext (simpler) |
-| May have side effects | Read-only, no side effects |
+Returns a `PagedResult<PortfolioDto>` with total count, allowing the frontend dashboard to render pagination controls.
 
 ---
 
@@ -229,16 +182,21 @@ public class PortfolioDto
     public Guid Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
-    public ThemeConfigDto Theme { get; set; } = new();
     public bool IsPublished { get; set; }
+    public ThemeConfigDto Theme { get; set; } = new();
     public List<PortfolioSectionDto> Sections { get; set; } = new();
 }
 
 public class ThemeConfigDto
 {
     public string Name { get; set; } = "default";
-    public string PrimaryColor { get; set; } = "#000000";
+    public string PrimaryColor { get; set; } = "#3B82F6";
+    public string SecondaryColor { get; set; } = "#10B981";
+    public string BackgroundColor { get; set; } = "#FFFFFF";
+    public string TextColor { get; set; } = "#1F2937";
+    public string FontHeading { get; set; } = "Inter";
     public string FontBody { get; set; } = "Inter";
+    public string Layout { get; set; } = "single-column";
 }
 ```
 
@@ -251,6 +209,8 @@ public class PortfolioSectionDto
     public string SectionType { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;  // JSON string
     public int SortOrder { get; set; }
+    public bool IsVisible { get; set; }
+    public string Variant { get; set; } = "default";
 }
 ```
 
@@ -305,19 +265,34 @@ public interface IApplicationDbContext
 
 ### IAuthService
 
-JWT token generation contract:
+JWT token generation and refresh token helpers:
 
 ```csharp
 public interface IAuthService
 {
-    /// <summary>
-    /// Generates a JWT containing userId, tenantId, email, and fullName claims.
-    /// </summary>
-    string GenerateToken(Guid userId, Guid tenantId, string email, string fullName);
+    string GenerateAccessToken(Guid userId, Guid tenantId, string email, string fullName);
+    string GenerateRefreshTokenString();
+    ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
 }
 ```
 
 **Implementation:** `JwtAuthService` in Infrastructure layer.
+
+### ICacheService
+
+Distributed cache abstraction (implemented by `RedisCacheService`):
+
+```csharp
+public interface ICacheService
+{
+    Task<T?> GetAsync<T>(string key, ...);
+    Task SetAsync<T>(string key, T value, TimeSpan? expiration = null, ...);
+    Task RemoveAsync(string key, ...);
+    Task RemoveByPrefixAsync(string prefixKey, ...);
+    Task<T?> GetOrSetAsync<T>(string key, Func<Task<T>> factory, TimeSpan? expiration = null, ...);
+    Task<bool> ExistsAsync(string key, ...);
+}
+```
 
 ### ITenantContext
 

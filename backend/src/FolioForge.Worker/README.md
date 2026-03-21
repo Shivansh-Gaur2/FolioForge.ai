@@ -36,18 +36,23 @@ FolioForge.Worker/
 ```mermaid
 graph TD
     A[RabbitMQ] -->|ResumeUploadedEvent| B[Worker Service]
-    B --> C{Extract PDF Text}
+    B --> B1[Extract OTel trace context from headers]
+    B1 --> C{Extract PDF Text}
     C --> D[PdfService]
     D --> E{Call AI Service}
-    E --> F[GroqAiService]
+    E --> F[GroqAiService + Circuit Breaker]
     F --> G{Parse JSON Response}
-    G --> H[Delete Old Sections]
-    H --> I[Insert New Sections]
-    I --> J[Database Updated]
+    G --> H[Begin DB Transaction]
+    H --> I[Delete Old Sections]
+    I --> J[Insert New Sections]
+    J --> K[Commit Transaction]
+    K --> L[Manual ACK]
+    G -->|parse failure| M[NACK / dead-letter]
     
     style B fill:#4CAF50
     style F fill:#2196F3
-    style J fill:#9C27B0
+    style K fill:#9C27B0
+    style L fill:#FF9800
 ```
 
 ---
@@ -56,159 +61,121 @@ graph TD
 
 ### Worker.cs - Background Service
 
-The main worker that processes messages:
+Key design choices versus the initial prototype:
+
+| Feature | Implementation |
+|---------|---------------|
+| **RabbitMQ host** | Read from `configuration["RabbitMq:HostName"]`; defaults to `"localhost"` |
+| **Queue durability** | `durable: true` — messages survive broker restarts |
+| **Prefetch** | `BasicQosAsync(prefetchCount: 1)` — one unacked message at a time (fair dispatch) |
+| **Acknowledgement** | Manual `BasicAckAsync` after success; `BasicNackAsync(requeue: false)` on failure (dead-letter) |
+| **OTel tracing** | Consumer span started from W3C context extracted from message headers; linked to original producer trace |
+| **Metrics** | `FolioForgeDiagnostics.ResumeProcessingDuration` histogram + `MessagesProcessed` counter |
 
 ```csharp
-public class Worker : BackgroundService
+public Worker(ILogger<Worker> logger, IServiceScopeFactory scopeFactory, IConfiguration configuration)
 {
-    private readonly ILogger<Worker> _logger;
-    private readonly IServiceScopeFactory _scopeFactory;
-    private IConnection? _connection;
-    private IChannel? _channel;
-    
-    public Worker(ILogger<Worker> logger, IServiceScopeFactory scopeFactory)
-    {
-        _logger = logger;
-        _scopeFactory = scopeFactory;  // For scoped service resolution
-    }
-    
-    public override async Task StartAsync(CancellationToken cancellationToken)
-    {
-        // Establish RabbitMQ connection
-        var factory = new ConnectionFactory { HostName = "localhost" };
-        _connection = await factory.CreateConnectionAsync();
-        _channel = await _connection.CreateChannelAsync();
-        
-        // Declare queue (idempotent)
-        await _channel.QueueDeclareAsync(
-            queue: "resume_processing_queue",
-            durable: false,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null
-        );
-        
-        _logger.LogInformation(" [*] Waiting for messages.");
-        await base.StartAsync(cancellationToken);
-    }
-    
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var consumer = new AsyncEventingBasicConsumer(_channel);
-        
-        consumer.ReceivedAsync += async (model, ea) =>
-        {
-            var body = ea.Body.ToArray();
-            var message = Encoding.UTF8.GetString(body);
-            
-            _logger.LogInformation($" [x] Received: {message}");
-            
-            try
-            {
-                var resumeEvent = JsonSerializer.Deserialize<ResumeUploadedEvent>(message);
-                
-                if (resumeEvent != null)
-                {
-                    _logger.LogInformation($"Processing for Portfolio {resumeEvent.PortfolioId}");
-                    await ProcessResumeAsync(resumeEvent.FilePath, resumeEvent.PortfolioId);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error processing message: {ex.Message}");
-            }
-        };
-        
-        await _channel.BasicConsumeAsync(
-            queue: "resume_processing_queue",
-            autoAck: true,
-            consumer: consumer
-        );
-        
-        // Keep service alive
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            await Task.Delay(1000, stoppingToken);
-        }
-    }
+    _logger = logger;
+    _scopeFactory = scopeFactory;
+    _rabbitHost = configuration["RabbitMq:HostName"] ?? "localhost";
+}
+
+public override async Task StartAsync(CancellationToken cancellationToken)
+{
+    var factory = new ConnectionFactory { HostName = _rabbitHost };
+    _connection = await factory.CreateConnectionAsync();
+    _channel = await _connection.CreateChannelAsync();
+
+    await _channel.QueueDeclareAsync(
+        queue: "resume_processing_queue",
+        durable: true,       // Survive broker restart
+        exclusive: false,
+        autoDelete: false,
+        arguments: null);
+
+    await _channel.BasicQosAsync(
+        prefetchSize: 0,
+        prefetchCount: 1,    // Don't overwhelm the worker
+        global: false);
+
+    _logger.LogInformation(" [*] Waiting for messages. ");
+    await base.StartAsync(cancellationToken);
 }
 ```
+
+In `ExecuteAsync`, the consumer sets `autoAck: false`. After processing:
+- **Success** → `BasicAckAsync(deliveryTag, multiple: false)`
+- **Failure** → `BasicNackAsync(deliveryTag, multiple: false, requeue: false)` (poison messages go to dead-letter, not infinite retry)
 
 ---
 
 ### ProcessResumeAsync - Core Logic
 
-The heavy lifting happens here:
+Presents a **Transactional Nuke & Pave** strategy: old sections are deleted and new AI-generated ones are inserted inside a single database transaction, ensuring atomicity (insert failure rolls back the delete).
 
 ```csharp
 private async Task ProcessResumeAsync(string filePath, Guid portfolioId)
 {
-    // Create scope for scoped services (DbContext, etc.)
     using var scope = _scopeFactory.CreateScope();
-    
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     var pdfService = scope.ServiceProvider.GetRequiredService<IPdfService>();
-    var aiService = scope.ServiceProvider.GetRequiredService<IAiService>();
-    
+    var aiService  = scope.ServiceProvider.GetRequiredService<IAiService>();
+
+    // 1. Extract text
+    var text = pdfService.ExtractText(filePath);
+
+    // 2. Call AI (wrapped in circuit breaker via ResilientAiServiceDecorator)
+    var jsonString = await aiService.GeneratePortfolioDataAsync(text);
+    var data = JsonSerializer.Deserialize<AiResultDto>(jsonString, ...);
+    if (data is null) throw new InvalidOperationException("Failed to deserialize AI response.");
+
+    // 3. Transactional Nuke & Pave
+    await using var transaction = await dbContext.Database.BeginTransactionAsync();
     try
     {
-        // 1. Extract text from PDF
-        var text = pdfService.ExtractText(filePath);
-        _logger.LogInformation("Text extracted. Calling AI...");
-        
-        // 2. Call AI for structured extraction
-        var jsonString = await aiService.GeneratePortfolioDataAsync(text);
-        _logger.LogInformation("AI Data Received!");
-        
-        // 3. Deserialize response
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var data = JsonSerializer.Deserialize<AiResultDto>(jsonString, options);
-        
-        // 4. Delete old sections (Nuke & Pave strategy)
-        var existingSections = await dbContext.Sections
-            .Where(s => s.PortfolioId == portfolioId)
-            .ToListAsync();
-        
-        if (existingSections.Any())
-        {
-            dbContext.Sections.RemoveRange(existingSections);
-            await dbContext.SaveChangesAsync();
-            _logger.LogInformation("Old sections deleted.");
-        }
-        
-        // 5. CRITICAL: Clear EF Core change tracker
-        dbContext.ChangeTracker.Clear();
-        
-        // 6. Insert new sections
+        var existing = await dbContext.Sections
+            .Where(s => s.PortfolioId == portfolioId).ToListAsync();
+        dbContext.Sections.RemoveRange(existing);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.ChangeTracker.Clear(); // Prevent EF conflicts
+
         var newSections = new List<PortfolioSection>
         {
-            new PortfolioSection("About", 1, 
-                JsonSerializer.Serialize(new { content = data.Summary }))
-                { PortfolioId = portfolioId },
-            
-            new PortfolioSection("Skills", 2, 
-                JsonSerializer.Serialize(new { items = data.Skills }))
-                { PortfolioId = portfolioId },
-            
-            new PortfolioSection("Timeline", 3, 
-                JsonSerializer.Serialize(new { items = data.Experience }))
-                { PortfolioId = portfolioId },
-            
-            new PortfolioSection("Projects", 4, 
-                JsonSerializer.Serialize(new { items = data.Projects }))
-                { PortfolioId = portfolioId }
+            new("About",    1, JsonSerializer.Serialize(new { content = data.Summary    })) { PortfolioId = portfolioId },
+            new("Skills",   2, JsonSerializer.Serialize(new { items   = data.Skills     })) { PortfolioId = portfolioId },
+            new("Timeline", 3, JsonSerializer.Serialize(new { items   = data.Experience })) { PortfolioId = portfolioId },
+            new("Projects", 4, JsonSerializer.Serialize(new { items   = data.Projects   })) { PortfolioId = portfolioId },
         };
-        
         await dbContext.Sections.AddRangeAsync(newSections);
         await dbContext.SaveChangesAsync();
-        
-        _logger.LogInformation("✅ DATABASE UPDATED SUCCESSFULLY!");
+        await transaction.CommitAsync();
     }
-    catch (Exception ex)
+    catch
     {
-        _logger.LogError($"Error: {ex.Message}");
+        await transaction.RollbackAsync();
+        throw;
     }
 }
+```
+### Program.cs
+
+```csharp
+IHost host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices((hostContext, services) =>
+    {
+        // 1. Infrastructure (DB, Redis, AI services, RabbitMQ publisher)
+        services.AddInfrastructure(hostContext.Configuration);
+
+        // 2. OpenTelemetry: tracing (Jaeger) + metrics (Prometheus)
+        services.AddFolioForgeOpenTelemetry(hostContext.Configuration);
+
+        // 3. Worker
+        services.AddHostedService<Worker>();
+    })
+    .Build();
+
+host.Run();
 ```
 
 ---
@@ -228,7 +195,7 @@ public class ExperienceDto
 {
     public string Company { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
-    public List<string> Points { get; set; } = new();
+    public List<string> Points { get; set; } = new();  // Structured bullet points
 }
 
 public class ProjectDto
@@ -238,65 +205,6 @@ public class ProjectDto
     public List<string> Points { get; set; } = new();
 }
 ```
-
-**Why `Points` Array Instead of `Description` String?**
-- AI extracts individual achievements as bullet points
-- Frontend can render as styled list
-- Better for parsing and highlighting
-- More structured data model
-
----
-
-## ⚠️ Critical Design Decisions
-
-### 1. IServiceScopeFactory
-
-```csharp
-private readonly IServiceScopeFactory _scopeFactory;
-
-// In ProcessResumeAsync:
-using var scope = _scopeFactory.CreateScope();
-var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-```
-
-**Why?**
-- Worker is a **Singleton** (runs for entire app lifetime)
-- DbContext is **Scoped** (one per request)
-- Must create explicit scope for each message
-- Prevents memory leaks and stale data
-
-### 2. ChangeTracker.Clear()
-
-```csharp
-dbContext.Sections.RemoveRange(existingSections);
-await dbContext.SaveChangesAsync();
-
-// CRITICAL: Clear the tracker
-dbContext.ChangeTracker.Clear();
-
-await dbContext.Sections.AddRangeAsync(newSections);
-```
-
-**Why?**
-- EF Core tracks deleted entities in memory
-- Without clearing, it tries to re-insert deleted rows
-- Causes primary key conflicts
-- "Nuke & Pave" pattern requires clean slate
-
-### 3. Direct Foreign Key Insert
-
-```csharp
-new PortfolioSection("About", 1, content)
-{ 
-    PortfolioId = portfolioId  // Set FK directly
-}
-```
-
-**Why?**
-- Don't need to load parent Portfolio entity
-- Faster database operation
-- Reduces memory usage
-- FK constraint ensures data integrity
 
 ---
 
@@ -310,21 +218,7 @@ cd backend/src/FolioForge.Worker
 dotnet run
 ```
 
-**Expected Output:**
-```
-info: FolioForge.Worker.Worker[0]
-      [*] Waiting for messages.
-info: FolioForge.Worker.Worker[0]
-      [x] Received: {"PortfolioId":"...","FilePath":"..."}
-info: FolioForge.Worker.Worker[0]
-      Text extracted. Calling AI...
-info: FolioForge.Worker.Worker[0]
-      AI Data Received!
-info: FolioForge.Worker.Worker[0]
-      Old sections deleted.
-info: FolioForge.Worker.Worker[0]
-      ✅ DATABASE UPDATED SUCCESSFULLY!
-```
+**Expected console output:** Structured log messages for connection, message receipt, AI call, transaction commit, and ACK.
 
 ---
 
@@ -344,6 +238,41 @@ info: FolioForge.Worker.Worker[0]
     "LogLevel": {
       "Default": "Information",
       "Microsoft.Hosting.Lifetime": "Information"
+        ,
+        "ConnectionStrings": {
+            "Redis": "localhost:6379"
+        },
+        "RabbitMq": {
+            "HostName": "localhost"
+        },
+        "OpenTelemetry": {
+            "ServiceName": "FolioForge.Worker",
+            "OtlpEndpoint": "http://localhost:4317",
+            "Sampling": { "SuccessRatio": 1.0 }
+        {
+            "ConnectionStrings": {
+                "DefaultConnection": "Server=localhost;Database=folioforge_db;...",
+                "Redis": "localhost:6379"
+            },
+            "RabbitMq": {
+                "HostName": "localhost"
+            },
+            "Groq": {
+                "ApiKey": "your-groq-api-key"
+            },
+            "OpenTelemetry": {
+                "ServiceName": "FolioForge.Worker",
+                "OtlpEndpoint": "http://localhost:4317",
+                "Sampling": { "SuccessRatio": 1.0 }
+            },
+            "Logging": {
+                "LogLevel": {
+                    "Default": "Information",
+                    "Microsoft.Hosting.Lifetime": "Information"
+                }
+            }
+        }
+        }
     }
   }
 }

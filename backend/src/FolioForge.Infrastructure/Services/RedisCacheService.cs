@@ -1,7 +1,9 @@
 using System.Text.Json;
 using FolioForge.Application.Common.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.StackExchangeRedis;   // ← add this
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace FolioForge.Infrastructure.Services;
@@ -15,6 +17,7 @@ public class RedisCacheService : ICacheService
     private readonly IDistributedCache _cache;
     private readonly IConnectionMultiplexer _redis;
     private readonly ILogger<RedisCacheService> _logger;
+    private readonly string _instanceName;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,11 +28,13 @@ public class RedisCacheService : ICacheService
     public RedisCacheService(
         IDistributedCache cache,
         IConnectionMultiplexer redis,
-        ILogger<RedisCacheService> logger)
+        ILogger<RedisCacheService> logger,
+        IOptions<RedisCacheOptions> redisOptions)
     {
         _cache = cache;
         _redis = redis;
         _logger = logger;
+        _instanceName = redisOptions.Value.InstanceName ?? string.Empty;
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
@@ -96,19 +101,22 @@ public class RedisCacheService : ICacheService
     {
         try
         {
-            var endpoints = _redis.GetEndPoints();
-            var server = _redis.GetServer(endpoints[0]);
-            var database = _redis.GetDatabase();
+            var pattern = $"{_instanceName}{prefixKey}*";
 
-            // Use SCAN to find keys matching the prefix (non-blocking)
-            var keys = server.KeysAsync(pattern: $"{prefixKey}*");
-
-            await foreach (var key in keys.WithCancellation(cancellationToken))
+            foreach (var endpoint in _redis.GetEndPoints())
             {
-                await database.KeyDeleteAsync(key);
+                var server = _redis.GetServer(endpoint);
+                if (!server.IsConnected || server.IsReplica) continue;
+
+                var database = _redis.GetDatabase();
+
+                await foreach (var key in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken))
+                {
+                    await database.KeyDeleteAsync(key);
+                }
             }
 
-            _logger.LogDebug("Cache REMOVE BY PREFIX: {Prefix}*", prefixKey);
+            _logger.LogDebug("Cache REMOVE BY PREFIX: {Pattern}", pattern);
         }
         catch (Exception ex)
         {

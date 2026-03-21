@@ -13,9 +13,13 @@ This layer contains all implementations for external dependencies: databases, me
 | **Database Access** | Entity Framework Core DbContext with tenant query filters |
 | **Repository Implementations** | Portfolio, Tenant, and User repository implementations |
 | **Multi-Tenancy** | Tenant middleware, scoped tenant context, automatic TenantId assignment |
-| **Authentication** | JWT token generation (HMAC-SHA256) |
+| **Authentication** | JWT access token generation + refresh token management (HMAC-SHA256) |
 | **External Services** | AI providers (Groq, OpenAI, Gemini), PDF parsing |
-| **Message Queues** | RabbitMQ event publishing |
+| **Distributed Cache** | Redis-backed `ICacheService` (cache-aside, prefix invalidation) |
+| **Rate Limiting** | Redis Token Bucket algorithm — atomic Lua script, per-client, multi-instance safe |
+| **Resilience** | Custom Circuit Breaker (AI service) + Bulkhead isolation (per-endpoint partitions) |
+| **Message Queues** | RabbitMQ event publishing with OpenTelemetry context propagation |
+| **Observability** | OpenTelemetry tracing (Jaeger) + metrics (Prometheus), smart head-based sampler |
 | **Dependency Injection** | Service registration extensions |
 
 ---
@@ -27,7 +31,7 @@ FolioForge.Infrastructure/
 ├── Middleware/
 │   └── TenantMiddleware.cs          # Multi-tenant resolution (JWT → Header)
 ├── Persistence/
-│   └── ApplicationDbContext.cs      # EF Core DbContext (4 DbSets, query filters)
+│   └── ApplicationDbContext.cs      # EF Core DbContext (5 DbSets, query filters)
 ├── Repositories/
 │   ├── PortfolioRepository.cs       # IPortfolioRepository implementation
 │   ├── TenantRepository.cs          # ITenantRepository (IgnoreQueryFilters)
@@ -35,15 +39,42 @@ FolioForge.Infrastructure/
 ├── Services/
 │   ├── GeminiAiService.cs           # Google Gemini 2.0 Flash implementation
 │   ├── GroqAiService.cs             # Groq Llama 3.3-70B implementation
-│   ├── JwtAuthService.cs            # JWT token generation (IAuthService)
+│   ├── JwtAuthService.cs            # JWT access token + refresh token helpers (IAuthService)
 │   ├── OpenAiService.cs             # OpenAI GPT implementation
 │   ├── PdfService.cs                # PDF text extraction (PdfPig)
+│   ├── RedisCacheService.cs         # Redis-backed ICacheService
+│   ├── ResilientAiServiceDecorator.cs # Decorator wrapping IAiService with Circuit Breaker
 │   └── TenantContext.cs             # Scoped tenant context (ITenantContext)
 ├── Messaging/
-│   └── RabbitMqEventPublisher.cs    # RabbitMQ event publisher
+│   └── RabbitMqEventPublisher.cs    # RabbitMQ publisher (durable, OTel context injection)
+├── RateLimiting/
+│   ├── RedisTokenBucketRateLimiter.cs # Atomic Lua Token Bucket
+│   ├── RateLimitMiddleware.cs       # ASP.NET Core middleware integration
+│   ├── RateLimitAttribute.cs        # [RateLimit("PolicyName")] attribute
+│   ├── ClientIdentityResolver.cs   # Extracts client identity (user ID or IP)
+│   ├── RateLimiterOptions.cs        # Per-policy configuration
+│   └── RateLimitingServiceCollectionExtensions.cs
+├── Resilience/
+│   ├── CircuitBreaker/
+│   │   ├── CircuitBreaker.cs            # State-machine circuit breaker (Closed/Open/HalfOpen)
+│   │   ├── CircuitBreakerFactory.cs    # Named registry for circuit breakers
+│   │   ├── CircuitBreakerOptions.cs    # Thresholds and retry window
+│   │   ├── CircuitBreakerOpenException.cs
+│   │   └── CircuitBreakerState.cs
+│   ├── Bulkhead/
+│   │   ├── BulkheadMiddleware.cs        # ASP.NET Core middleware integration
+│   │   ├── BulkheadAttribute.cs        # [Bulkhead("PartitionName")] attribute
+│   │   ├── BulkheadOptions.cs
+│   │   └── BulkheadPartitionManager.cs  # Partition state + snapshot API
+│   └── ResilienceServiceCollectionExtensions.cs
+├── Telemetry/
+│   ├── FolioForgeDiagnostics.cs     # Static ActivitySource + Meter + tag constants
+│   ├── OpenTelemetryExtension.cs   # Tracing (Jaeger) + metrics (Prometheus) setup
+│   ├── RabbitMqContextPropagator.cs # W3C TraceContext extract/inject for RabbitMQ headers
+│   └── SmartSampler.cs             # Parent-based sampler that force-promotes error spans
 ├── Migrations/
 │   └── *.cs                         # EF Core migrations
-├── DependencyInjection.cs           # Service registration (10 services)
+├── DependencyInjection.cs           # Service registration
 └── FolioForge.Infrastructure.csproj
 ```
 
@@ -122,6 +153,7 @@ public override async Task<int> SaveChangesAsync(CancellationToken cancellationT
 | `User` | `users` | Unique `Email` index, tenant query filter |
 | `Portfolio` | `portfolios` | Composite unique index `(TenantId, Slug)`, tenant query filter, Theme as JSON |
 | `PortfolioSection` | `portfolio_sections` | Cascade delete from Portfolio |
+| `RefreshToken` | `refresh_tokens` | Per-user opaque tokens; `IsActive` = not revoked and not expired |
 
 **Key Configurations:**
 - JSON serialization for Theme value object (stored as `nvarchar(max)`)
@@ -247,12 +279,13 @@ public class TenantContext : ITenantContext
 
 ### JwtAuthService
 
-Generates JWT tokens with user and tenant claims using HMAC-SHA256:
+Generates **short-lived access tokens** (15 min) and provides helpers for refresh token management:
 
 ```csharp
 public class JwtAuthService : IAuthService
 {
-    public string GenerateToken(Guid userId, Guid tenantId, string email, string fullName)
+    // Generate short-lived access token (JWT)
+    public string GenerateAccessToken(Guid userId, Guid tenantId, string email, string fullName)
     {
         var claims = new[]
         {
@@ -264,15 +297,22 @@ public class JwtAuthService : IAuthService
         };
 
         var token = new JwtSecurityToken(
-            issuer: _issuer,       // "FolioForge"
-            audience: _audience,   // "FolioForge.Client"
+            issuer: _issuer,
+            audience: _audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_expirationMinutes), // 1440 = 24h
+            expires: DateTime.UtcNow.AddMinutes(_expirationMinutes), // 15 min
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256)
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    // Generate a cryptographically random refresh token string
+    public string GenerateRefreshTokenString()
+        => Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+
+    // Validate an expired access token (for the refresh flow)
+    public ClaimsPrincipal? GetPrincipalFromExpiredToken(string token) { ... }
 }
 ```
 
@@ -283,6 +323,95 @@ public class JwtAuthService : IAuthService
 | `fullName` | User name | Display |
 | `tenantId` | Tenant ID (GUID) | Tenant resolution by middleware |
 | `jti` | Random GUID | Token unique ID |
+
+> Refresh tokens are stored in the `refresh_tokens` table (see `RefreshToken` entity in Domain), not inside the JWT.
+
+## 📦 Distributed Cache (Redis)
+
+### RedisCacheService
+
+Implements `ICacheService` using `IDistributedCache` (standard ops) and `IConnectionMultiplexer` (advanced key-pattern scanning):
+
+| Method | Description |
+|--------|-------------|
+| `GetAsync<T>` | Deserialize cached JSON; returns `default` on miss |
+| `SetAsync<T>` | Serialize to JSON; default TTL 30 minutes |
+| `RemoveAsync` | Delete a single key |
+| `RemoveByPrefixAsync` | Scan + delete all keys matching a prefix (cache invalidation) |
+| `GetOrSetAsync<T>` | Cache-aside pattern — fetch from cache or populate via factory |
+| `ExistsAsync` | Check key presence |
+
+---
+
+## ⏱️ Rate Limiting
+
+### RedisTokenBucketRateLimiter
+
+All state is stored in Redis as a hash `(policyName:clientId)` and mutated by an atomic Lua script — race-condition-free across multiple API instances.
+
+**Policies** (configured in `appsettings.json`):
+
+| Policy | Burst | Rate | Used On |
+|--------|-------|------|---------|
+| `Auth` | 5 | 2/s | `AuthController` |
+| `Upload` | 3 | 1/s | Upload endpoint |
+| `Default` | 20 | 10/s | All other endpoints |
+
+The `[RateLimit("PolicyName")]` attribute and `RateLimitMiddleware` wire the limiter into the ASP.NET Core pipeline. `ClientIdentityResolver` uses the authenticated `userId` as the bucket key for logged-in requests, or falls back to the client IP.
+
+---
+
+## 🛡️ Resilience
+
+### Circuit Breaker
+
+`CircuitBreaker` is a state machine with three states:
+
+| State | Behavior |
+|-------|----------|
+| `Closed` | Normal operation; failures counted |
+| `Open` | Fast-fail with `CircuitBreakerOpenException`; no calls to downstream |
+| `HalfOpen` | Single probe request; success → Closed, failure → Open again |
+
+`ResilientAiServiceDecorator` wraps the `IAiService` implementation using the `GroqAi` named circuit breaker. Callers that catch `CircuitBreakerOpenException` can queue for retry or return a graceful degradation response.
+
+`ICircuitBreakerFactory` provides a registry of named breakers — inspected live via `GET /api/resilience`.
+
+### Bulkhead
+
+`BulkheadMiddleware` reads the `[Bulkhead("PartitionName")]` attribute and limits concurrency per partition with an optional queue. Requests exceeding the queue size receive `503 Service Unavailable`.
+
+`BulkheadPartitionManager.GetSnapshot()` provides live utilization data (active count, queued count, utilization %) — also exposed at `GET /api/resilience`.
+
+---
+
+## 📊 Observability (OpenTelemetry)
+
+### Tracing
+
+| Source | What is traced |
+|--------|----------------|
+| `FolioForgeDiagnostics.ActivitySource` | Custom spans for resume processing, AI calls |
+| ASP.NET Core instrumentation | All incoming HTTP requests (filtered: no `/swagger`, `/health`, `/metrics`) |
+| HttpClient instrumentation | All outgoing HTTP calls (Groq, Gemini API) |
+| SqlClient instrumentation | EF Core SQL queries with statement text |
+| StackExchange.Redis instrumentation | Redis operations |
+| RabbitMQ (manual) | Producer and consumer spans with W3C context propagation |
+
+Spans are exported to Jaeger via OTLP gRPC (`http://localhost:4317` by default).
+
+`SmartSampler` uses parent-based head sampling. Error spans above a configurable ratio are force-promoted to a separate OTLP exporter, ensuring errors are never dropped even at low sampling rates.
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `resume_processing_duration_ms` | Histogram | End-to-end resume processing time |
+| `messages_processed_total` | Counter | RabbitMQ messages processed (tagged: `event_type`, `success`) |
+| Built-in ASP.NET Core metrics | Various | Request duration, active requests |
+| Built-in HttpClient metrics | Various | Outgoing request duration |
+
+Prometheus scrapes `/metrics`. A sample `prometheus.yml` and `docker-compose.observability.yml` are provided at the repo root for local Jaeger + Prometheus + Grafana setup.
 
 ---
 

@@ -121,26 +121,36 @@ export const ContactSection = ({ variant = 'default' }) => {
     };
 
     return (
-        <section id="contact" className="py-24 relative overflow-hidden
-                                        bg-gradient-to-b from-slate-50 to-slate-100
-                                        dark:from-slate-900 dark:to-slate-950">
+        <section
+            id="contact"
+            className="py-24 relative overflow-hidden"
+            style={{
+                backgroundImage: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 85%, var(--color-secondary) 15%), color-mix(in srgb, var(--color-bg) 94%, var(--color-primary) 6%))',
+            }}
+        >
             {/* Background decorations */}
-            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-200/30 dark:bg-blue-500/10 rounded-full blur-3xl" />
-            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-200/30 dark:bg-purple-500/10 rounded-full blur-3xl" />
+            <div
+                className="absolute top-0 left-1/4 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 25%, transparent)' }}
+            />
+            <div
+                className="absolute bottom-0 right-1/4 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-secondary) 25%, transparent)' }}
+            />
 
             <div className="relative max-w-5xl mx-auto px-6">
                 <ScrollReveal>
                     <div className="text-center mb-16">
-                        <span className="inline-block px-4 py-2 rounded-full 
+                        <span className="section-badge inline-block px-4 py-2 rounded-full 
                                        bg-rose-100 dark:bg-rose-900/30 
                                        text-rose-600 dark:text-rose-400
                                        text-sm font-semibold mb-4">
                             Get In Touch
                         </span>
-                        <h2 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
+                        <h2 className="section-heading text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
                             Let's Work Together
                         </h2>
-                        <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+                        <p className="section-subtitle text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
                             Have a project in mind? Let's discuss how we can bring your ideas to life.
                         </p>
                     </div>

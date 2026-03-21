@@ -172,9 +172,11 @@ public class Worker : BackgroundService
 
                 try
                 {
-                    // 2. Fetch and Delete Old Sections
+                    // 2. Fetch and delete only AI-managed sections.
+                    // Keep user-managed sections (e.g., Contact) intact.
+                    var aiManagedSectionTypes = new[] { "About", "Skills", "Timeline", "Projects" };
                     var existingSections = await dbContext.Sections
-                                                .Where(s => s.PortfolioId == portfolioId)
+                                                .Where(s => s.PortfolioId == portfolioId && aiManagedSectionTypes.Contains(s.SectionType))
                                                 .ToListAsync();
 
                     if (existingSections.Any())

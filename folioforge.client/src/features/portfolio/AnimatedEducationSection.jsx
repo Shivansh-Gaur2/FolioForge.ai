@@ -130,15 +130,23 @@ export const AnimatedEducationSection = ({ content, variant = 'default' }) => {
     if (items.length === 0) return null;
 
     return (
-        <section id="education" className="py-24 relative overflow-hidden
-                                           bg-gradient-to-b from-slate-50 to-white
-                                           dark:from-slate-900 dark:to-slate-950">
+        <section
+            id="education"
+            className="py-24 relative overflow-hidden"
+            style={{
+                backgroundImage: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 90%, var(--color-primary) 10%), var(--color-bg))',
+            }}
+        >
             {/* Background decoration */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute top-20 right-10 w-72 h-72 rounded-full
-                               bg-emerald-200/20 dark:bg-emerald-900/10 blur-3xl" />
-                <div className="absolute bottom-20 left-10 w-96 h-96 rounded-full
-                               bg-teal-200/20 dark:bg-teal-900/10 blur-3xl" />
+                <div
+                    className="absolute top-20 right-10 w-72 h-72 rounded-full blur-3xl"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 20%, transparent)' }}
+                />
+                <div
+                    className="absolute bottom-20 left-10 w-96 h-96 rounded-full blur-3xl"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--color-secondary) 18%, transparent)' }}
+                />
             </div>
 
             <div className="relative max-w-5xl mx-auto px-6">
@@ -148,13 +156,13 @@ export const AnimatedEducationSection = ({ content, variant = 'default' }) => {
                         <motion.span
                             initial={{ opacity: 0, y: 10 }}
                             whileInView={{ opacity: 1, y: 0 }}
-                            className="inline-block px-4 py-1.5 rounded-full text-sm font-medium
+                            className="section-badge inline-block px-4 py-1.5 rounded-full text-sm font-medium
                                        bg-emerald-100 dark:bg-emerald-900/40
                                        text-emerald-700 dark:text-emerald-300 mb-4"
                         >
                             Academic Background
                         </motion.span>
-                        <h2 className="text-4xl md:text-5xl font-bold
+                        <h2 className="section-heading text-4xl md:text-5xl font-bold
                                        bg-gradient-to-r from-emerald-600 to-teal-600
                                        dark:from-emerald-400 dark:to-teal-400
                                        bg-clip-text text-transparent">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -35,6 +35,11 @@ export const DashboardPage = () => {
     // ── Delete state ─────────────────────────────────────
     const [deletingId, setDeletingId] = useState(null);
 
+    // ── AI processing poll state ──────────────────────────
+    const [processingId, setProcessingId] = useState(null);
+    const pollingRef = useRef(null);
+
+
     // ── Fetch user's portfolios ──────────────────────────
     const fetchPortfolios = useCallback(async () => {
         setListLoading(true);
@@ -50,9 +55,59 @@ export const DashboardPage = () => {
         }
     }, []);
 
+    const startPolling = useCallback((portfolioId, initialSectionCount) => {
+        if(pollingRef.current) clearInterval(pollingRef.current);
+
+        setProcessingId(portfolioId);
+        setUploadStatus({
+            type: 'processing', 
+            message: 'Processing your resume may take some time...',
+        });
+
+        let attempts = 0;
+        const MAX_ATTEMPTS = 20;
+
+        pollingRef.current = setInterval(async () => {
+            attempts++;
+
+            if(attempts > MAX_ATTEMPTS){
+                clearInterval(pollingRef.current);
+                setProcessingId(null);
+                setUploadStatus({
+                    type: 'error',
+                    message: 'Processing is taking longer than expected. Please refresh later.',
+                });
+                return;
+            }
+
+            try {
+                const portfolio = await PortfolioService.getById(portfolioId);
+                if((portfolio.sections?.length ?? 0) > initialSectionCount){
+                    clearInterval(pollingRef.current);
+                    setProcessingId(null);
+                    await fetchPortfolios();
+                    setUploadStatus({
+                        type: 'success',
+                        message: '✅ Portfolio updated successfully from your resume!',
+                    });
+                }
+            }
+            catch{
+
+            }
+        }, 3000);
+
+    }, [fetchPortfolios]);
+
     useEffect(() => {
         fetchPortfolios();
     }, [fetchPortfolios]);
+    
+    useEffect(() => {
+        return () => {
+            if(pollingRef.current) clearInterval(pollingRef.current);
+        }
+    }, []);
 
     // ── Handlers ─────────────────────────────────────────
     const handleLogout = () => {
@@ -79,24 +134,25 @@ export const DashboardPage = () => {
         }
     };
 
-    const handleUpload = async (portfolioId, file) => {
-        setUploadingId(portfolioId);
-        setUploadStatus(null);
-        try {
-            await PortfolioService.uploadResume(portfolioId, file);
-            setUploadStatus({
-                type: 'success',
-                message: 'Resume queued for AI processing! Refresh in a few seconds to see results.',
-            });
-        } catch (err) {
-            setUploadStatus({
-                type: 'error',
-                message: err.message || 'Upload failed',
-            });
-        } finally {
-            setUploadingId(null);
-        }
-    };
+const handleUpload = async (portfolioId, file) => {
+    setUploadingId(portfolioId);
+    setUploadStatus(null);
+
+    const currentPortfolio = portfolios.find(p => p.id === portfolioId);
+    const initialSectionCount = currentPortfolio?.sections?.length ?? 0;
+
+    try {
+        await PortfolioService.uploadResume(portfolioId, file);
+        startPolling(portfolioId, initialSectionCount);
+    } catch (err) {
+        setUploadStatus({
+            type: 'error',
+            message: err.message || 'Upload failed',
+        });
+    } finally {
+        setUploadingId(null);
+    }
+};
 
     const handleDelete = async (portfolioId) => {
         if (!window.confirm('Are you sure you want to delete this portfolio? This cannot be undone.')) return;
@@ -184,19 +240,31 @@ export const DashboardPage = () => {
                                 className={`mb-6 p-4 rounded-xl border flex items-center justify-between ${
                                     uploadStatus.type === 'success'
                                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                        : uploadStatus.type === 'processing'
+                                        ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
                                         : 'bg-red-500/10 border-red-500/30 text-red-300'
                                 }`}
                             >
-                                <span>{uploadStatus.message}</span>
-                                <button
-                                    onClick={() => {
-                                        setUploadStatus(null);
-                                        if (uploadStatus.type === 'success') fetchPortfolios();
-                                    }}
-                                    className="text-xs underline ml-4"
-                                >
-                                    {uploadStatus.type === 'success' ? 'Refresh & Dismiss' : 'Dismiss'}
-                                </button>
+                                <span className="flex items-center gap-2">
+                                    {uploadStatus.type === 'processing' && (
+                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                        </svg>
+                                    )}
+                                    {uploadStatus.message}
+                                </span>
+                                {uploadStatus.type !== 'processing' && (
+                                    <button
+                                        onClick={() => {
+                                            setUploadStatus(null);
+                                            if (uploadStatus.type === 'success') fetchPortfolios();
+                                        }}
+                                        className="text-xs underline ml-4"
+                                    >
+                                        {uploadStatus.type === 'success' ? 'Refresh & Dismiss' : 'Dismiss'}
+                                    </button>
+                                )}
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -336,6 +404,7 @@ export const DashboardPage = () => {
                                         onCustomize={() => navigate(`/portfolio/${p.id}/edit`)}
                                         onUpload={handleUpload}
                                         isUploading={uploadingId === p.id}
+                                        isProcessing={processingId === p.id}
                                         onDelete={handleDelete}
                                         isDeleting={deletingId === p.id}
                                     />
@@ -374,7 +443,7 @@ const EmptyState = ({ onCreateClick }) => (
     </motion.div>
 );
 
-const PortfolioCard = ({ portfolio, index, onView, onCustomize, onUpload, isUploading, onDelete, isDeleting }) => {
+const PortfolioCard = ({ portfolio, index, onView, onCustomize, onUpload, isUploading, isProcessing, onDelete, isDeleting }) => {
     const [dragOver, setDragOver] = useState(false);
     const sectionCount = portfolio.sections?.length || 0;
     const hasContent = sectionCount > 1; // more than the default Markdown section
@@ -415,6 +484,15 @@ const PortfolioCard = ({ portfolio, index, onView, onCustomize, onUpload, isUplo
 
             {/* Status badges */}
             <div className="flex items-center gap-2 mb-5 text-xs">
+                {isProcessing && (
+                    <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 flex items-center gap-1">
+                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        AI processing…
+                    </span>
+                )}
                 <span className={`px-2 py-0.5 rounded-full ${
                     hasContent
                         ? 'bg-emerald-500/20 text-emerald-300'

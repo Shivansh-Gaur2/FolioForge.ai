@@ -161,26 +161,36 @@ export const AnimatedTimelineSection = ({ content, variant = 'default' }) => {
     if (items.length === 0) return null;
 
     return (
-        <section id="experience" className="py-24 relative overflow-hidden
-                                          bg-gradient-to-b from-slate-50 to-white
-                                          dark:from-slate-900 dark:to-slate-950">
+        <section
+            id="experience"
+            className="py-24 relative overflow-hidden"
+            style={{
+                backgroundImage: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 88%, var(--color-primary) 12%), var(--color-bg))',
+            }}
+        >
             {/* Background decorations */}
-            <div className="absolute top-1/4 -left-48 w-96 h-96 bg-purple-200/40 dark:bg-purple-500/10 rounded-full blur-3xl" />
-            <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-blue-200/40 dark:bg-blue-500/10 rounded-full blur-3xl" />
+            <div
+                className="absolute top-1/4 -left-48 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 30%, transparent)' }}
+            />
+            <div
+                className="absolute bottom-1/4 -right-48 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-secondary) 24%, transparent)' }}
+            />
 
             <div className="relative max-w-5xl mx-auto px-6">
                 <ScrollReveal>
                     <div className="text-center mb-16">
-                        <span className="inline-block px-4 py-2 rounded-full 
+                        <span className="section-badge inline-block px-4 py-2 rounded-full 
                                        bg-purple-100 dark:bg-purple-900/30 
                                        text-purple-600 dark:text-purple-400
                                        text-sm font-semibold mb-4">
                             Career Journey
                         </span>
-                        <h2 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
+                        <h2 className="section-heading text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
                             Experience
                         </h2>
-                        <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+                        <p className="section-subtitle text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
                             Building impactful solutions at scale
                         </p>
                     </div>

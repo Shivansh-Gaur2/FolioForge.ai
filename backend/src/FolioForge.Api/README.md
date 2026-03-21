@@ -25,16 +25,18 @@ This is the outermost layer of the Clean Architecture, responsible for handling 
 ```
 FolioForge.Api/
 ├── Controllers/
-│   ├── AuthController.cs          # Register, Login, Me endpoints
-│   ├── PortfoliosController.cs    # Portfolio CRUD + Resume Upload
-│   └── TenantsController.cs       # Tenant creation & lookup
+│   ├── AuthController.cs          # Register, Login, Refresh, Revoke, Me endpoints
+│   ├── PortfoliosController.cs    # Portfolio CRUD + Resume Upload + Customization
+│   ├── TenantsController.cs       # Tenant creation & lookup
+│   └── ResilienceController.cs    # Circuit breaker + bulkhead live status (ops dashboard)
 ├── Contracts/
-│   └── CreatePortfolioRequest.cs  # Request DTOs
+│   ├── CreatePortfolioRequest.cs  # Request DTOs
+│   └── UpdateCustomizationRequest.cs
 ├── Properties/
 │   └── launchSettings.json        # Development settings (5090 HTTP)
 ├── Uploads/                       # Uploaded PDF storage
 ├── Program.cs                     # Application entry point & DI setup
-├── appsettings.json              # Production configuration (JWT, DB, AI)
+├── appsettings.json              # Production configuration (JWT, DB, AI, Redis)
 └── appsettings.Development.json  # Development configuration
 ```
 
@@ -99,10 +101,14 @@ The order of middleware is critical for correct tenant and auth resolution:
 ```csharp
 app.UseCors("AllowReactApp");
 app.UseMiddleware<TenantMiddleware>();  // Resolve tenant from JWT or header
+app.UseMiddleware<RateLimitMiddleware>();  // Distributed token bucket rate limiting
+app.UseMiddleware<BulkheadMiddleware>();   // Per-endpoint concurrency isolation
 app.UseHttpsRedirection();
 app.UseAuthentication();               // Validate JWT token
 app.UseAuthorization();                // Enforce [Authorize] attribute
 app.MapControllers();
+app.MapHealthChecks("/health");
+app.UseOpenTelemetryPrometheusScrapingEndpoint(); // /metrics
 ```
 
 #### Swagger JWT Configuration
@@ -173,17 +179,14 @@ builder.Services.AddCors(options =>
 
 ### AuthController.cs
 
-Handles user registration and login. These endpoints are **excluded from tenant middleware** — the tenant is resolved from the request body (register) or user record (login).
+Handles registration, login, token refresh, revocation, and the `/me` endpoint. Decorated with **rate limiting** (`Auth` policy: 5 burst / 2/s sustained) and **bulkhead** isolation to prevent credential stuffing from starving other operations.
 
 ```csharp
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController : ControllerBase
-{
-    private readonly IUserRepository _userRepository;
-    private readonly ITenantRepository _tenantRepository;
-    private readonly IAuthService _authService;
-}
+[RateLimit("Auth")]   // Strict: 5 burst, 2/s sustained
+[Bulkhead("Auth")]    // Concurrency isolation
+public class AuthController : ControllerBase { ... }
 ```
 
 #### Auth Endpoints
@@ -192,40 +195,50 @@ public class AuthController : ControllerBase
 |--------|-------|------|-------------|
 | `POST` | `/api/auth/register` | Public | Register a new user under a tenant |
 | `POST` | `/api/auth/login` | Public | Login with email & password |
+| `POST` | `/api/auth/refresh` | Public | Exchange expired access token + refresh token for a new pair (token rotation) |
+| `POST` | `/api/auth/revoke` | `[Authorize]` | Revoke a refresh token (logout) |
 | `GET` | `/api/auth/me` | `[Authorize]` | Get current user profile from JWT |
 
-#### Register Flow
+#### Register / Login Flow
 
 ```
 1. Validate tenant exists and is active
 2. Check email uniqueness globally (cross-tenant)
-3. Hash password with BCrypt
-4. Create User entity
-5. Generate JWT token
-6. Return AuthResponse (token, userId, email, tenantId, tenantIdentifier)
+3. Hash password with BCrypt (register) / verify BCrypt hash (login)
+4. Create User entity (register only)
+5. Generate access token (15 min JWT) + refresh token (7-day opaque string, stored in DB)
+6. Return AuthResponse { accessToken, refreshToken, userId, email, fullName, tenantId }
+```
+
+#### Token Refresh Flow
+
+```
+POST /api/auth/refresh { accessToken (expired OK), refreshToken }
+1. Validate JWT signature (lifetime validation OFF)
+2. Look up refreshToken in DB for the userId from JWT sub
+3. If token already revoked → revoke ALL user tokens (token theft detection) → 401
+4. Rotate: revoke old refreshToken, issue new access + refresh pair
+← { accessToken (new, 15 min), refreshToken (new, 7 days), ... }
 ```
 
 #### Request/Response DTOs
 
 ```csharp
 // Register
-public record RegisterRequest(
-    string Email,
-    string FullName,
-    string Password,
-    string TenantIdentifier
-);
+public record RegisterRequest(string Email, string FullName,
+    string Password, string TenantIdentifier);
 
 // Login
-public record LoginRequest(
-    string Email,
-    string Password
-);
+public record LoginRequest(string Email, string Password);
 
-// Response (both register & login)
+// Refresh
+public record RefreshTokenRequest(string AccessToken, string RefreshToken);
+
+// Response (register / login / refresh)
 public class AuthResponse
 {
-    public string Token { get; set; }
+    public string AccessToken { get; set; }   // Short-lived JWT (15 min)
+    public string RefreshToken { get; set; }  // Long-lived opaque token (7 days)
     public Guid UserId { get; set; }
     public string Email { get; set; }
     public string FullName { get; set; }
@@ -292,9 +305,14 @@ public class PortfoliosController : ControllerBase
 | Method | Route | Description |
 |--------|-------|-------------|
 | `POST` | `/api/portfolios` | Create new portfolio via MediatR command |
+| `GET` | `/api/portfolios/mine?page=1&pageSize=10` | List portfolios for current user (paginated) |
 | `GET` | `/api/portfolios/{id:guid}` | Fetch portfolio with sections via MediatR query |
 | `GET` | `/api/portfolios/{slug}` | Fetch portfolio by URL slug |
-| `POST` | `/api/portfolios/{id}/upload-resume` | Upload PDF and publish to RabbitMQ |
+| `DELETE` | `/api/portfolios/{id:guid}` | Delete portfolio (owner-only check in handler) |
+| `PUT` | `/api/portfolios/{id:guid}/customization` | Update theme, colors, fonts, section order/visibility |
+| `POST` | `/api/portfolios/{id}/upload-resume` | Upload PDF (magic-byte validated, 10 MB limit) and publish to RabbitMQ |
+
+The upload endpoint applies a stricter `[RateLimit("Upload")]` + `[Bulkhead("Upload")]` policy on top of the controller-level `[Authorize]`.
 
 #### User ID Extraction
 
@@ -313,38 +331,42 @@ private Guid GetUserId()
 
 ### Resume Upload Flow
 
-The `UploadResume` endpoint demonstrates the event-driven architecture:
+The `UploadResume` endpoint demonstrates the event-driven architecture with security hardening:
 
 ```csharp
 [HttpPost("{id}/upload-resume")]
+[RateLimit("Upload")]                   // Stricter rate limit
+[Bulkhead("Upload")]                    // Dedicated concurrency partition
+[RequestSizeLimit(10 * 1024 * 1024)]   // 10 MB hard limit at Kestrel level
 public async Task<IActionResult> UploadResume(Guid id, IFormFile file)
 {
-    // 1. Validate file
-    if (file == null || file.Length == 0)
-        return BadRequest("No file uploaded.");
-    
-    // 2. Save PDF to disk
-    var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
-    Directory.CreateDirectory(folderPath);
-    
-    var filePath = Path.Combine(folderPath, $"{id}_{Guid.NewGuid()}.pdf");
-    using (var stream = new FileStream(filePath, FileMode.Create))
-    {
-        await file.CopyToAsync(stream);
-    }
-    
-    // 3. Publish event to RabbitMQ (fire-and-forget)
-    await _publisher.PublishAsync(new ResumeUploadedEvent(id, filePath));
-    
-    // 4. Return 202 Accepted immediately
+    // 1. Validate size + extension
+    // 2. Verify %PDF- magic bytes (not just the extension)
+    // 3. Save PDF to disk (Uploads/ folder)
+    // 4. Publish ResumeUploadedEvent to RabbitMQ (fire-and-forget)
+    // 5. Return 202 Accepted immediately
     return Accepted(new { message = "Resume queued for processing", portfolioId = id });
 }
 ```
 
-**Key Points:**
-- Returns `202 Accepted` immediately for responsive UX
-- Offloads heavy AI processing to background worker
-- Uses event-driven pattern for loose coupling
+**Security hardening applied:**
+- File extension allowlist (`[.pdf]` only)
+- Magic byte validation (reads first 5 bytes, must be `%PDF-`)
+- 10 MB `RequestSizeLimit` applied at the Kestrel layer, not just application layer
+
+---
+
+### ResilienceController.cs
+
+Exposes live observability data for the resilience infrastructure. Secured behind `[Authorize]` — for ops dashboards and alerting.
+
+```
+GET /api/resilience
+← {
+     circuitBreakers: [{ name, state, consecutiveFailures, failureThreshold, retryAfter }],
+     bulkheadPartitions: [{ name, activeCount, queuedCount, maxConcurrency, utilizationPercent }]
+   }
+```
 
 ---
 
@@ -400,16 +422,26 @@ The `TenantMiddleware` resolves the current tenant for each request:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Data Source=localhost;Initial Catalog=folioforge;Integrated Security=True;TrustServerCertificate=True;Pooling=True"
+    "DefaultConnection": "Data Source=localhost;Initial Catalog=folioforge;Integrated Security=True;TrustServerCertificate=True;Pooling=True",
+    "Redis": "localhost:6379"
   },
   "Jwt": {
     "Secret": "FolioForge-SuperSecret-Key-That-Is-At-Least-32-Chars-Long!!",
     "Issuer": "FolioForge",
     "Audience": "FolioForge.Client",
-    "ExpirationMinutes": "1440"
+    "ExpirationMinutes": "15",
+    "RefreshTokenExpirationDays": "7"
+  },
+  "RabbitMq": {
+    "HostName": "localhost"
   },
   "Groq": {
     "ApiKey": "your-groq-api-key"
+  },
+  "OpenTelemetry": {
+    "ServiceName": "FolioForge.Api",
+    "OtlpEndpoint": "http://localhost:4317",
+    "Sampling": { "SuccessRatio": 1.0 }
   },
   "Cors": {
     "AllowedOrigins": ["https://yourdomain.com"]
@@ -418,13 +450,18 @@ The `TenantMiddleware` resolves the current tenant for each request:
 ```
 
 | Setting | Purpose |
-|---------|---------|
+|---------|----------|
 | `ConnectionStrings:DefaultConnection` | SQL Server connection (Integrated Security for Windows Auth) |
+| `ConnectionStrings:Redis` | Redis connection string (rate limiting + caching) |
 | `Jwt:Secret` | HMAC-SHA256 signing key (min 32 chars) |
 | `Jwt:Issuer` | Token issuer claim |
 | `Jwt:Audience` | Token audience claim |
-| `Jwt:ExpirationMinutes` | Token lifetime (1440 = 24 hours) |
+| `Jwt:ExpirationMinutes` | Access token lifetime (`15` = 15 minutes) |
+| `Jwt:RefreshTokenExpirationDays` | Refresh token lifetime (default `7` days) |
+| `RabbitMq:HostName` | RabbitMQ broker hostname |
 | `Groq:ApiKey` | API key for Groq AI (Llama 3.3-70B) |
+| `OpenTelemetry:OtlpEndpoint` | Jaeger OTLP gRPC endpoint |
+| `OpenTelemetry:Sampling:SuccessRatio` | Head-based sampling ratio (1.0 = 100%) |
 | `Cors:AllowedOrigins` | Production allowed origins |
 
 ---

@@ -26,6 +26,7 @@ FolioForge.Domain/
 │   ├── BaseEntity.cs              # Abstract base for all entities
 │   ├── Portfolio.cs               # Aggregate root for portfolios (multi-tenant)
 │   ├── PortfolioSection.cs        # Widget/section entity
+│   ├── RefreshToken.cs            # Server-side refresh token (opaque, rotating)
 │   ├── Tenant.cs                  # Tenant/workspace entity
 │   └── User.cs                    # User entity (multi-tenant)
 ├── Common/
@@ -214,12 +215,53 @@ public interface ITenantEntity
 
 ---
 
+### RefreshToken
+
+Server-side opaque refresh token supporting rotation and revocation. Does **not** implement `ITenantEntity` — token lookup is always by the token string, not by tenant.
+
+```csharp
+public class RefreshToken : BaseEntity
+{
+    public string Token { get; private set; }          // Cryptographically random string
+    public DateTime ExpiresAt { get; private set; }   // 7-day expiry
+    public DateTime? RevokedAt { get; private set; }  // Set on Revoke()/rotation
+    public string? ReplacedByToken { get; private set; } // Rotation tracking
+    public Guid UserId { get; private set; }          // Owner
+
+    // Active = not revoked AND not expired
+    public bool IsActive => RevokedAt == null && ExpiresAt > DateTime.UtcNow;
+
+    public RefreshToken(string token, Guid userId, DateTime expiresAt) { ... }
+
+    public void Revoke(string? replacedByToken = null)
+    {
+        RevokedAt = DateTime.UtcNow;
+        ReplacedByToken = replacedByToken;
+    }
+}
+```
+
+**Security Design:**
+- On refresh: old token is revoked with `ReplacedByToken` set, a new pair is issued
+- If a revoked token is presented: ALL tokens for that user are revoked (token theft detection)
+
+---
+
 ### ThemeConfig (Value Object)
 
 Embedded value object for theme settings:
 
 ```csharp
-public record ThemeConfig(string Name, string PrimaryColor, string FontBody);
+public record ThemeConfig(
+    string Name,
+    string PrimaryColor,
+    string SecondaryColor,
+    string BackgroundColor,
+    string TextColor,
+    string FontHeading,
+    string FontBody,
+    string Layout
+);
 ```
 
 **Why Record?**

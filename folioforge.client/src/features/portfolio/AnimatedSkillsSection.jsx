@@ -158,24 +158,36 @@ export const AnimatedSkillsSection = ({ content, variant = 'default' }) => {
     const categories = Object.entries(categorizedSkills);
 
     return (
-        <section id="skills" className="py-24 relative overflow-hidden">
+        <section
+            id="skills"
+            className="py-24 relative overflow-hidden"
+            style={{
+                backgroundImage: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 92%, var(--color-primary) 8%), var(--color-bg))',
+            }}
+        >
             {/* Background decoration */}
-            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-200/30 dark:bg-blue-500/10 rounded-full blur-3xl" />
-            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-200/30 dark:bg-purple-500/10 rounded-full blur-3xl" />
+            <div
+                className="absolute top-0 left-1/4 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 28%, transparent)' }}
+            />
+            <div
+                className="absolute bottom-0 right-1/4 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: 'color-mix(in srgb, var(--color-secondary) 24%, transparent)' }}
+            />
 
             <div className="relative max-w-6xl mx-auto px-6">
                 <ScrollReveal>
                     <div className="text-center mb-16">
-                        <span className="inline-block px-4 py-2 rounded-full 
+                        <span className="section-badge inline-block px-4 py-2 rounded-full 
                                        bg-blue-100 dark:bg-blue-900/30 
                                        text-blue-600 dark:text-blue-400
                                        text-sm font-semibold mb-4">
                             Technical Arsenal
                         </span>
-                        <h2 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
+                        <h2 className="section-heading text-4xl md:text-5xl font-black text-slate-900 dark:text-white mb-4">
                             Skills & Expertise
                         </h2>
-                        <p className="text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
+                        <p className="section-subtitle text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
                             A comprehensive toolkit built over years of crafting scalable solutions
                         </p>
                     </div>

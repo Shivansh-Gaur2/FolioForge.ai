@@ -30,13 +30,18 @@ export const FloatingNav = ({ items }) => {
 
             // Update active section
             const sections = navItems.map(item => document.getElementById(item.id));
-            const scrollPosition = currentScrollY + window.innerHeight / 3;
+            const scrollPosition = currentScrollY + window.innerHeight / 2;
 
-            for (let i = sections.length - 1; i >= 0; i--) {
-                const section = sections[i];
-                if (section && section.offsetTop <= scrollPosition) {
-                    setActiveSection(navItems[i].id);
-                    break;
+            // At the very top, always show first item active
+            if (currentScrollY < 50) {
+                setActiveSection(navItems[0]?.id ?? 'hero');
+            } else {
+                for (let i = sections.length - 1; i >= 0; i--) {
+                    const section = sections[i];
+                    if (section && section.offsetTop <= scrollPosition) {
+                        setActiveSection(navItems[i].id);
+                        break;
+                    }
                 }
             }
         };
@@ -84,11 +89,14 @@ export const FloatingNav = ({ items }) => {
                                     {activeSection === item.id && (
                                         <motion.div
                                             layoutId="activeNav"
-                                            className="absolute inset-0 bg-blue-100 dark:bg-blue-900/30 rounded-xl"
+                                            className="absolute inset-0 rounded-xl"
+                                            style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary, #3B82F6) 15%, transparent)' }}
                                             transition={{ type: "spring", stiffness: 400, damping: 30 }}
                                         />
                                     )}
-                                    <span className="relative flex items-center gap-1.5">
+                                    <span className="relative flex items-center gap-1.5"
+                                        style={activeSection === item.id ? { color: 'var(--color-primary, #3B82F6)' } : undefined}
+                                    >
                                         <span className="hidden sm:inline">{item.icon}</span>
                                         {item.label}
                                     </span>
