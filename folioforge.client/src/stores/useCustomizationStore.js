@@ -77,6 +77,8 @@ export const useCustomizationStore = create((set, get) => ({
                     sortOrder: s.sortOrder,
                     isVisible: s.isVisible,
                     variant: s.variant,
+                    // Always forward the current content so edits persist
+                    content: s.content ?? null,
                 })),
             });
             set({ isDirty: false });
@@ -131,6 +133,19 @@ export const useCustomizationStore = create((set, get) => ({
         set(state => ({
             sections: state.sections.map(s =>
                 s.id === sectionId ? { ...s, variant } : s
+            ),
+            isDirty: true,
+        }));
+    },
+
+    /**
+     * Update the raw JSON content string of a single section.
+     * `newContent` must be a valid JSON string (the serialised section payload).
+     */
+    updateSectionContent: (sectionId, newContent) => {
+        set(state => ({
+            sections: state.sections.map(s =>
+                s.id === sectionId ? { ...s, content: newContent } : s
             ),
             isDirty: true,
         }));

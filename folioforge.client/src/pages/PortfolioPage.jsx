@@ -10,11 +10,29 @@ import { AnimatedProjectsSection } from '../features/portfolio/AnimatedProjectsS
 import { AnimatedEducationSection } from '../features/portfolio/AnimatedEducationSection';
 import { ContactSection } from '../features/portfolio/ContactSection';
 
+/** Parse bio text from about section content JSON */
+const parseBio = (content) => {
+    try {
+        const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+        if (typeof parsed === 'string') return parsed;
+        return parsed?.content || parsed?.bio || parsed?.summary || '';
+    } catch { return typeof content === 'string' ? content : ''; }
+};
+
 /**
  * Maps sectionType (case-insensitive) to the component that renders it.
- * Hero/About are handled separately outside this map.
+ * About renders as the full-screen hero with particles + bio.
  */
 const SECTION_RENDERERS = {
+    about:     (section, portfolio) => (
+        <ParticleHero
+            key={section.id}
+            title={portfolio?.title || 'Portfolio'}
+            bio={parseBio(section.content)}
+            onContactClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
+            onDownloadClick={() => alert('CV download coming soon!')}
+        />
+    ),
     skills:    (section) => <AnimatedSkillsSection key={section.id} content={section.content} variant={section.variant} />,
     timeline:  (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
     projects:  (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
@@ -53,19 +71,9 @@ const PortfolioContent = ({ portfolio }) => {
         [portfolio.sections]
     );
 
-    // About section is used for the hero bio; hero rendering is handled via ParticleHero
-    const aboutSection = visibleSections.find(s => s.sectionType?.toLowerCase() === 'about');
-
-    // Parse bio from About section
-    let bio = '';
-    try {
-        const aboutContent = aboutSection?.content;
-        if (aboutContent) bio = JSON.parse(aboutContent).content;
-    } catch { /* bio parse failed, use default */ }
-
-    // Sections that are NOT hero/about — these follow the chosen layout
+    // All sections flow in sortOrder (about renders as hero, hero type is hidden)
     const bodySections = visibleSections.filter(
-        s => !['hero', 'about'].includes(s.sectionType?.toLowerCase())
+        s => s.sectionType?.toLowerCase() !== 'hero'
     );
 
     // Build dynamic nav items from visible sections for FloatingNav
@@ -74,13 +82,13 @@ const PortfolioContent = ({ portfolio }) => {
     );
 
     const navItems = useMemo(() => {
-        const items = [{ id: 'hero', label: 'Home', icon: '🏠' }];
+        const items = [];
         bodySections.forEach(s => {
             const type = s.sectionType?.toLowerCase();
             items.push({
                 id: type,
-                label: s.sectionType,
-                icon: SECTION_ICONS[type] || '📄',
+                label: type === 'about' ? 'Home' : s.sectionType,
+                icon: type === 'about' ? '🏠' : (SECTION_ICONS[type] || '📄'),
             });
         });
         if (!items.some(i => i.id === 'contact')) {
@@ -94,13 +102,13 @@ const PortfolioContent = ({ portfolio }) => {
     };
 
     // ── Render a single section by its type ────────────────────
-    const renderSection = (section, extraClass = '') => {
+    const renderSection = (section, portfolioData) => {
         const type = section.sectionType?.toLowerCase();
         const renderer = SECTION_RENDERERS[type];
         if (!renderer) return null;
         return (
-            <div key={section.id} id={type} className={extraClass}>
-                {renderer(section)}
+            <div key={section.id} id={type}>
+                {renderer(section, portfolioData)}
             </div>
         );
     };
@@ -117,19 +125,24 @@ const PortfolioContent = ({ portfolio }) => {
             style={{
                 backgroundColor,
                 color: textColor,
-                fontFamily: fontBody,
                 '--color-primary': primaryColor,
                 '--color-secondary': secondaryColor,
                 '--color-bg': backgroundColor,
                 '--color-text': textColor,
                 '--font-heading': fontHeading,
                 '--font-body': fontBody,
+                '--font-heading-family': `"${fontHeading}"`,
+                '--font-body-family': `"${fontBody}"`,
             }}
         >
             {/* Inject themed utility classes that override Tailwind defaults */}
             <style>{`
+                .portfolio-root {
+                    font-family: var(--font-body-family), ui-sans-serif, system-ui, sans-serif;
+                }
+                
                 .portfolio-root .section-heading {
-                    font-family: var(--font-heading), ui-sans-serif, system-ui, sans-serif;
+                    font-family: var(--font-heading-family), ui-sans-serif, system-ui, sans-serif;
                     color: var(--color-primary) !important;
                 }
                 .portfolio-root .section-badge {
@@ -148,16 +161,6 @@ const PortfolioContent = ({ portfolio }) => {
             `}</style>
             {/* Floating Navigation – dynamic items */}
             <FloatingNav items={navItems} />
-
-            {/* Hero Section with Particles – always full-width at top */}
-            <div id="hero">
-                <ParticleHero
-                    title={portfolio.title}
-                    bio={bio}
-                    onContactClick={scrollToContact}
-                    onDownloadClick={() => alert('CV download coming soon!')}
-                />
-            </div>
 
             {/* Body sections – rendered in sortOrder, respecting chosen layout */}
             <div className={layoutClass}>
@@ -193,7 +196,7 @@ const PortfolioContent = ({ portfolio }) => {
 
                 {/* Main content area */}
                 <main className="flex-1 min-w-0">
-                    {bodySections.map(s => renderSection(s))}
+                    {bodySections.map(s => renderSection(s, portfolio))}
                     {!hasContactSection && (
                         <div id="contact">
                             <ContactSection variant="default" />

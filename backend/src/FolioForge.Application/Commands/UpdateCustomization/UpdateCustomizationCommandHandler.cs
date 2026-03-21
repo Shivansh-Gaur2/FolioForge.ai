@@ -36,7 +36,7 @@ public class UpdateCustomizationCommandHandler : IRequestHandler<UpdateCustomiza
             request.Layout
         );
 
-        // 2. Update section order, visibility, and variant
+        // 2. Update section order, visibility, variant, and optionally content
         foreach (var sectionUpdate in request.Sections)
         {
             var section = portfolio.Sections.FirstOrDefault(s => s.Id == sectionUpdate.SectionId);
@@ -44,7 +44,21 @@ public class UpdateCustomizationCommandHandler : IRequestHandler<UpdateCustomiza
 
             section.SortOrder = sectionUpdate.SortOrder;
             section.IsVisible = sectionUpdate.IsVisible;
-            section.Variant = sectionUpdate.Variant;
+            section.Variant   = sectionUpdate.Variant;
+
+            // Only update content when the client explicitly sends a new value
+            if (sectionUpdate.Content is not null)
+            {
+                try
+                {
+                    section.UpdateContentRaw(sectionUpdate.Content);
+                }
+                catch (System.Text.Json.JsonException ex)
+                {
+                    // Malformed JSON from client — skip silently rather than aborting the whole save
+                    Console.Error.WriteLine($"[UpdateCustomization] Invalid JSON for section {sectionUpdate.SectionId}: {ex.Message}");
+                }
+            }
         }
 
         await _repository.UpdateAsync(portfolio);

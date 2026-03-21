@@ -171,7 +171,7 @@ namespace FolioForge.Api.Controllers
                 request.FontBody,
                 request.Layout,
                 request.Sections.Select(s => new SectionCustomization(
-                    s.SectionId, s.SortOrder, s.IsVisible, s.Variant
+                    s.SectionId, s.SortOrder, s.IsVisible, s.Variant, s.Content
                 )).ToList()
             );
 
