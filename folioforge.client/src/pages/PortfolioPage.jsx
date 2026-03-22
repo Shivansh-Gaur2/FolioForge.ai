@@ -97,10 +97,6 @@ const PortfolioContent = ({ portfolio }) => {
         return items;
     }, [bodySections]);
 
-    const scrollToContact = () => {
-        document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });
-    };
-
     // ── Render a single section by its type ────────────────────
     const renderSection = (section, portfolioData) => {
         const type = section.sectionType?.toLowerCase();

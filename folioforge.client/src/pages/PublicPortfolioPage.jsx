@@ -9,8 +9,8 @@ import { AsyncStateHandler } from '../components/AsyncStateHandler';
 // we replicate the same data-fetching pattern here with the public API.
 
 // Import all the section renderers and components used by PortfolioPage
-import { motion, useInView } from 'framer-motion';
-import { useMemo, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { useMemo } from 'react';
 import { ParticleHero } from '../features/portfolio/ParticleHero';
 import { AnimatedSkillsSection } from '../features/portfolio/AnimatedSkillsSection';
 import { AnimatedTimelineSection } from '../features/portfolio/AnimatedTimelineSection';

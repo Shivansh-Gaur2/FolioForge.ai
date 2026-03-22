@@ -124,7 +124,7 @@ const EducationCard = ({ item, index }) => {
  * Vertical timeline with graduation cap icons, alternating left/right cards.
  * Matches the visual style of AnimatedTimelineSection but with emerald/teal accents.
  */
-export const AnimatedEducationSection = ({ content, variant = 'default' }) => {
+export const AnimatedEducationSection = ({ content }) => {
     const items = parseEducation(content);
 
     if (items.length === 0) return null;

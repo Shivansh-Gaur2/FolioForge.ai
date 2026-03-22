@@ -68,7 +68,6 @@ export const PricingPage = () => {
         }
     };
 
-    const freePlan = plans.find(p => p.slug === 'free');
     const proPlan = plans.find(p => p.slug === 'pro');
 
     const formatPrice = (cents) => {
