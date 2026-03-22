@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { config } from '../config/environment';
 
 /**
  * RegisterPage
@@ -50,7 +49,6 @@ export const RegisterPage = () => {
                 email: form.email,
                 fullName: form.fullName,
                 password: form.password,
-                tenantIdentifier: config.tenant.identifier,
             });
             navigate('/dashboard', { replace: true });
         } catch (err) {

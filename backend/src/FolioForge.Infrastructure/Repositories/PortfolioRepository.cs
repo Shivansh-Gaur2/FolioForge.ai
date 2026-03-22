@@ -35,6 +35,14 @@ namespace FolioForge.Infrastructure.Repositories
             return await _context.Portfolios.Include(p => p.Sections).FirstOrDefaultAsync(p => p.Slug == slug);
         }
 
+        public async Task<Portfolio?> GetPublishedBySlugAsync(string slug)
+        {
+            return await _context.Portfolios
+                .IgnoreQueryFilters()
+                .Include(p => p.Sections)
+                .FirstOrDefaultAsync(p => p.Slug == slug && p.IsPublished);
+        }
+
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

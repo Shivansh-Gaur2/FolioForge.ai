@@ -34,7 +34,7 @@ const SECTION_RENDERERS = {
     skills:   (section) => <AnimatedSkillsSection key={section.id} content={section.content} variant={section.variant} />,
     timeline: (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
     projects: (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
-    contact:  (section) => <ContactSection key={section.id} variant={section.variant} />,
+    contact:  (section) => <ContactSection key={section.id} content={section.content} variant={section.variant} />,
     education: (section) => <AnimatedEducationSection key={section.id} content={section.content} variant={section.variant} />,
 };
 

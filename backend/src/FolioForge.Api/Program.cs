@@ -67,8 +67,10 @@ builder.Services.AddFolioForgeOpenTelemetry(builder.Configuration);
 // ==================================================================
 // HEALTH CHECKS (SQL Server, Redis, RabbitMQ)
 // ==================================================================
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
-var rabbitHost = builder.Configuration["RabbitMq:HostName"] ?? "localhost";
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.");
+var rabbitHost = builder.Configuration["RabbitMq:HostName"]
+    ?? throw new InvalidOperationException("RabbitMq:HostName is required.");
 
 builder.Services.AddHealthChecks()
     .AddSqlServer(

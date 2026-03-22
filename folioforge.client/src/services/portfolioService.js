@@ -19,6 +19,15 @@ export const PortfolioService = {
     },
 
     /**
+     * Get a public portfolio by slug (no auth required).
+     * GET /api/p/:slug
+     */
+    getPublicBySlug: async (slug) => {
+        if (!slug) throw new Error("Portfolio slug is required");
+        return await apiClient.get(`/p/${slug}`);
+    },
+
+    /**
      * Create a new portfolio.
      * POST /api/portfolios  { title, slug }
      * Returns { id }
@@ -50,8 +59,24 @@ export const PortfolioService = {
             formData,
             {
                 headers: { 'Content-Type': 'multipart/form-data' },
-                timeout: 60000, // PDF uploads may take longer
+                timeout: 60000,
             }
         );
+    },
+
+    /**
+     * Publish a portfolio (make it publicly viewable).
+     * POST /api/portfolios/:id/publish
+     */
+    publish: async (id) => {
+        return await apiClient.post(`/portfolios/${id}/publish`);
+    },
+
+    /**
+     * Unpublish a portfolio (make it private).
+     * POST /api/portfolios/:id/unpublish
+     */
+    unpublish: async (id) => {
+        return await apiClient.post(`/portfolios/${id}/unpublish`);
     },
 };

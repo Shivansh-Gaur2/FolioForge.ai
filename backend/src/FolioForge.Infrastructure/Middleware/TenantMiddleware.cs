@@ -17,14 +17,10 @@ namespace FolioForge.Infrastructure.Middleware
 
     /// <summary>
     /// Middleware that resolves the current tenant. Resolution order:
-    /// 1. Validated JWT "tenantId" claim (for authenticated users — no header needed)
-    /// 2. X-Tenant-Id header (for unauthenticated / public endpoints)
+    /// 1. Validated JWT "tenantId" claim (for authenticated users)
+    /// 2. Auto-assign the default "folioforge" tenant (for public / unauthenticated requests)
     /// 
-    /// IMPORTANT: This middleware MUST be placed AFTER UseAuthentication() so that
-    /// the JWT has already been validated (signature, expiry, issuer, audience).
-    /// We read from HttpContext.User.Claims — never parse the raw token ourselves.
-    /// 
-    /// Tenant lookups are cached in Redis to avoid hitting the DB on every request.
+    /// IMPORTANT: This middleware MUST be placed AFTER UseAuthentication().
     /// </summary>
     public class TenantMiddleware
     {
@@ -39,6 +35,7 @@ namespace FolioForge.Infrastructure.Middleware
         {
             "/api/tenants",
             "/api/auth",
+            "/api/p/",
             "/swagger",
             "/health"
         };
@@ -60,81 +57,57 @@ namespace FolioForge.Infrastructure.Middleware
                 return;
             }
 
-            var dbContext = context.RequestServices.GetRequiredService<ApplicationDbContext>();
             var tenantContext = context.RequestServices.GetRequiredService<ITenantContext>();
             var cache = context.RequestServices.GetRequiredService<ICacheService>();
 
             // ── Strategy 1: Resolve tenant from VALIDATED JWT claims ──
-            // HttpContext.User is populated by UseAuthentication() which has already
-            // verified the token signature, expiry, issuer, and audience.
             if (context.User.Identity?.IsAuthenticated == true)
             {
                 var tenantIdClaim = context.User.FindFirst("tenantId")?.Value;
 
                 if (tenantIdClaim != null && Guid.TryParse(tenantIdClaim, out var tenantId))
                 {
-                    var cached = await cache.GetOrSetAsync(
-                        CacheKeys.TenantById(tenantId),
-                        async () =>
-                        {
-                            var t = await dbContext.Tenants
-                                .IgnoreQueryFilters()
-                                .FirstOrDefaultAsync(t => t.Id == tenantId);
-                            return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
-                        },
-                        CacheKeys.TenantTtl);
+                    var cached = await GetCachedTenantByIdAsync(cache, context, tenantId);
 
                     if (cached != null && cached.IsActive)
                     {
                         tenantContext.SetTenant(cached.Id, cached.Identifier);
-                        _logger.LogDebug("Tenant resolved from JWT claims: {TenantIdentifier}", cached.Identifier);
                         await _next(context);
                         return;
                     }
                 }
             }
 
-            // ── Strategy 2: Fall back to X-Tenant-Id header ──
-            if (context.Request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeader) &&
-                !string.IsNullOrWhiteSpace(tenantHeader))
+            // ── Strategy 2: Auto-assign default tenant for unauthenticated requests ──
+            var defaultTenant = await GetCachedTenantByIdAsync(
+                cache, context, ApplicationDbContext.DefaultTenantId);
+
+            if (defaultTenant != null && defaultTenant.IsActive)
             {
-                var tenantIdentifier = tenantHeader.ToString().Trim().ToLowerInvariant();
-
-                var cached = await cache.GetOrSetAsync(
-                    CacheKeys.TenantByIdentifier(tenantIdentifier),
-                    async () =>
-                    {
-                        var t = await dbContext.Tenants
-                            .IgnoreQueryFilters()
-                            .FirstOrDefaultAsync(t => t.Identifier == tenantIdentifier);
-                        return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
-                    },
-                    CacheKeys.TenantTtl);
-
-                if (cached == null)
-                {
-                    context.Response.StatusCode = StatusCodes.Status404NotFound;
-                    await context.Response.WriteAsJsonAsync(new { error = $"Tenant '{tenantIdentifier}' not found." });
-                    return;
-                }
-
-                if (!cached.IsActive)
-                {
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    await context.Response.WriteAsJsonAsync(new { error = "Tenant is deactivated." });
-                    return;
-                }
-
-                tenantContext.SetTenant(cached.Id, cached.Identifier);
-                _logger.LogDebug("Tenant resolved from header (cached): {TenantIdentifier}", cached.Identifier);
+                tenantContext.SetTenant(defaultTenant.Id, defaultTenant.Identifier);
                 await _next(context);
                 return;
             }
 
-            // ── Neither JWT nor header provided ──
-            _logger.LogWarning("No tenant could be resolved for path: {Path}", path);
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = "Authentication required. Please log in or provide X-Tenant-Id header." });
+            _logger.LogError("Default tenant not found or inactive. Run migrations to seed it.");
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new { error = "System configuration error." });
+        }
+
+        private static async Task<CachedTenant?> GetCachedTenantByIdAsync(
+            ICacheService cache, HttpContext context, Guid tenantId)
+        {
+            return await cache.GetOrSetAsync(
+                CacheKeys.TenantById(tenantId),
+                async () =>
+                {
+                    var dbContext = context.RequestServices.GetRequiredService<ApplicationDbContext>();
+                    var t = await dbContext.Tenants
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(t => t.Id == tenantId);
+                    return t is null ? null! : new CachedTenant(t.Id, t.Identifier, t.IsActive);
+                },
+                CacheKeys.TenantTtl);
         }
     }
 }

@@ -25,7 +25,8 @@ namespace FolioForge.Infrastructure
             // ==============================================================
             // REDIS DISTRIBUTED CACHE
             // ==============================================================
-            var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+            var redisConnectionString = configuration.GetConnectionString("Redis")
+                ?? throw new InvalidOperationException("ConnectionStrings:Redis configuration is required.");
 
             services.AddStackExchangeRedisCache(options =>
             {
@@ -53,9 +54,12 @@ namespace FolioForge.Infrastructure
             services.AddScoped<IPortfolioRepository, PortfolioRepository>();
             services.AddScoped<ITenantRepository, TenantRepository>();
             services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<IPlanRepository, PlanRepository>();
             services.AddScoped<IAuthService, JwtAuthService>();
             services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
             services.AddScoped<IPdfService, PdfService>();
+            services.AddHttpClient("Razorpay");
+            services.AddScoped<IPaymentService, RazorpayService>();
             services.AddHttpClient<IAiService, GroqAiService>();
 
             // Distributed rate limiting (Token Bucket via Redis)

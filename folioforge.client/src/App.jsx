@@ -8,6 +8,8 @@ import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PortfolioPage } from './pages/PortfolioPage';
 import { PortfolioEditorPage } from './pages/PortfolioEditorPage';
+import { PublicPortfolioPage } from './pages/PublicPortfolioPage';
+import { PricingPage } from './pages/PricingPage';
 
 /**
  * App Component
@@ -51,6 +53,9 @@ function App() {
                             <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
                             <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
 
+                            {/* Public: pricing page */}
+                            <Route path="/pricing" element={<PricingPage />} />
+
                             {/* Protected: dashboard */}
                             <Route path="/dashboard" element={
                                 <ProtectedRoute><DashboardPage /></ProtectedRoute>
@@ -61,7 +66,10 @@ function App() {
                                 <ProtectedRoute><PortfolioEditorPage /></ProtectedRoute>
                             } />
 
-                            {/* Public: view a portfolio by id */}
+                            {/* Public: view a portfolio by slug (no auth required) */}
+                            <Route path="/p/:slug" element={<PublicPortfolioPage />} />
+
+                            {/* Protected: view a portfolio by id (owner) */}
                             <Route path="/portfolio/:id" element={<PortfolioPageWrapper />} />
 
                             {/* Default redirect */}

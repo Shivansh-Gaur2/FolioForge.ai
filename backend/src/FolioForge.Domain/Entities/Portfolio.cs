@@ -87,5 +87,17 @@ namespace FolioForge.Domain.Entities
             foreach (var s in sections) Sections.Add(s);
             UpdatedAt = DateTime.UtcNow;
         }
+
+        public void Publish()
+        {
+            IsPublished = true;
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        public void Unpublish()
+        {
+            IsPublished = false;
+            UpdatedAt = DateTime.UtcNow;
+        }
     }
 }

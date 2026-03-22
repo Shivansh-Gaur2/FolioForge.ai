@@ -33,11 +33,6 @@ apiClient.interceptors.request.use(
         if (config.features.debugLogging) {
             console.log(`[API] ${requestConfig.method?.toUpperCase()} ${requestConfig.url}`);
         }
-        
-        // Multi-Tenancy: Inject tenant identifier into every request
-        if (config.tenant.identifier) {
-            requestConfig.headers['X-Tenant-Id'] = config.tenant.identifier;
-        }
 
         // Auth: Inject JWT Bearer token if present
         const token = localStorage.getItem('ff_token');

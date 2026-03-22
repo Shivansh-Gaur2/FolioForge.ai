@@ -35,8 +35,8 @@ namespace FolioForge.Application.Commands.CreatePortfolio
 
             var portfolio = new Portfolio(request.UserId, _tenantContext.TenantId, request.DesiredSlug, request.Title);
 
-            var defaultBio = new { text = "Welcome to my portfolio! I am a software engineer..." };
-            portfolio.AddSection(PortfolioSection.Create("Markdown", 0, defaultBio));
+            var defaultBio = new { content = "Welcome to my portfolio! I am a software engineer..." };
+            portfolio.AddSection(PortfolioSection.Create("About", 1, defaultBio));
 
             await _repository.AddAsync(portfolio);
             await _repository.SaveChangesAsync();

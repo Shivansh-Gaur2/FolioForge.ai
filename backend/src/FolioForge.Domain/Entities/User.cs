@@ -13,6 +13,14 @@ namespace FolioForge.Domain.Entities
         public string PasswordHash { get; private set; } = default!;
         public Guid TenantId { get; set; }
 
+        // ── Billing ──────────────────────────────────────
+        public Guid PlanId { get; private set; }
+        public string? StripeCustomerId { get; private set; }
+        public string? StripeSubscriptionId { get; private set; }
+        public string SubscriptionStatus { get; private set; } = "active"; // active, past_due, canceled, trialing
+        public int AiParsesUsedThisMonth { get; private set; }
+        public DateTime AiParsesResetAt { get; private set; } = DateTime.UtcNow;
+
         private User() { }
 
         public User(string email, string fullName, string passwordHash, Guid tenantId)
@@ -27,6 +35,51 @@ namespace FolioForge.Domain.Entities
         {
             FullName = fullName;
             UpdatedAt = DateTime.UtcNow;
+        }
+
+        public void SetPlan(Guid planId)
+        {
+            PlanId = planId;
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        public void SetStripeCustomer(string stripeCustomerId)
+        {
+            StripeCustomerId = stripeCustomerId;
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        public void UpdateSubscription(string subscriptionId, string status, Guid planId)
+        {
+            StripeSubscriptionId = subscriptionId;
+            SubscriptionStatus = status;
+            PlanId = planId;
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        public void CancelSubscription()
+        {
+            StripeSubscriptionId = null;
+            SubscriptionStatus = "canceled";
+            UpdatedAt = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Increment AI parse counter. Resets monthly.
+        /// </summary>
+        public int IncrementAiParses()
+        {
+            // Reset counter if we've crossed into a new month
+            if (DateTime.UtcNow >= AiParsesResetAt)
+            {
+                AiParsesUsedThisMonth = 0;
+                AiParsesResetAt = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+                    .AddMonths(1);
+            }
+
+            AiParsesUsedThisMonth++;
+            UpdatedAt = DateTime.UtcNow;
+            return AiParsesUsedThisMonth;
         }
     }
 }

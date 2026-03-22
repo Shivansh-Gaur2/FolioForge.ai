@@ -97,14 +97,19 @@ const ProjectCard = ({ project, index }) => {
                         className="absolute inset-0 bg-black/30 backdrop-blur-sm
                                  flex items-center justify-center gap-4"
                     >
-                        <motion.button
+                        {project.Url && (
+                        <motion.a
+                            href={project.Url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.9 }}
                             className="px-4 py-2 rounded-xl bg-white text-slate-900
                                      font-semibold text-sm shadow-lg"
                         >
-                            View Details
-                        </motion.button>
+                            View Project
+                        </motion.a>
+                        )}
                     </motion.div>
                 </div>
 
@@ -147,21 +152,27 @@ const ProjectCard = ({ project, index }) => {
                 {/* Bottom action bar */}
                 <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700/50
                               flex items-center justify-between">
-                    <div className="flex items-center gap-4 text-slate-400 text-sm">
-                        <span className="flex items-center gap-1">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                            </svg>
-                            Code
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            Demo
-                        </span>
-                    </div>
+                    {project.Url ? (
+                        <a href={project.Url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 text-sm font-medium
+                                      text-blue-600 dark:text-blue-400 hover:underline">
+                            <span className="flex items-center gap-1">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                View Project
+                            </span>
+                        </a>
+                    ) : (
+                        <div className="flex items-center gap-4 text-slate-400 text-sm">
+                            <span className="flex items-center gap-1">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                </svg>
+                                Code
+                            </span>
+                        </div>
+                    )}
                     <motion.div
                         whileHover={{ x: 4 }}
                         className="text-blue-600 dark:text-blue-400 cursor-pointer"
@@ -223,16 +234,14 @@ const ProjectShowcase = ({ project, index }) => {
                 </h3>
                 <SmartContent content={project.Points || project.Description} variant="gradient" />
                 <div className="mt-6 flex gap-3">
-                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    {project.Url && (
+                    <motion.a href={project.Url} target="_blank" rel="noopener noreferrer"
+                        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                         className="px-5 py-2.5 rounded-xl bg-slate-900 dark:bg-white 
                                  text-white dark:text-slate-900 text-sm font-semibold shadow-lg">
                         View Project
-                    </motion.button>
-                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                        className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600
-                                 text-slate-600 dark:text-slate-300 text-sm font-medium">
-                        Source Code
-                    </motion.button>
+                    </motion.a>
+                    )}
                 </div>
             </div>
         </motion.div>
@@ -259,7 +268,11 @@ const ProjectListItem = ({ project, index }) => {
             <div className="flex-1 min-w-0">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white
                              group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    {project.Name}
+                    {project.Url ? (
+                        <a href={project.Url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                            {project.Name}
+                        </a>
+                    ) : project.Name}
                 </h3>
                 <SmartContent content={project.Points || project.Description} variant="gradient" />
                 <div className="flex flex-wrap gap-1.5 mt-2">

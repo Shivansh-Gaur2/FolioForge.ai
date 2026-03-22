@@ -12,27 +12,25 @@ public class GeminiAiService : IAiService
     private readonly string _apiKey;
     private readonly ILogger<GeminiAiService> _logger;
 
-    // UPDATED: Using the latest stable model
-    private const string ModelId = "gemini-2.0-flash";
+    private readonly string _modelId;
 
     public GeminiAiService(HttpClient httpClient, IConfiguration config, ILogger<GeminiAiService> logger)
     {
         _httpClient = httpClient;
         _apiKey = config["Gemini:ApiKey"] ?? throw new InvalidOperationException("Gemini:ApiKey configuration is missing");
+        _modelId = config["Gemini:Model"] ?? "gemini-2.0-flash";
         _logger = logger;
     }
 
     public async Task<string> GeneratePortfolioDataAsync(string resumeText)
     {
-        // 1. Check if Key is valid (Basic check)
-        if (string.IsNullOrEmpty(_apiKey) || !_apiKey.StartsWith("AIza"))
+        if (string.IsNullOrEmpty(_apiKey))
         {
-            _logger.LogError("Invalid Gemini API Key. It should start with 'AIza'.");
-            throw new Exception("Invalid API Key configuration.");
+            _logger.LogError("Gemini API Key is not configured.");
+            throw new InvalidOperationException("Gemini API Key is not configured.");
         }
 
-        // 2. Build URL with the new Model ID
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{ModelId}:generateContent?key={_apiKey}";
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{_modelId}:generateContent?key={_apiKey}";
 
         var requestBody = new
         {
