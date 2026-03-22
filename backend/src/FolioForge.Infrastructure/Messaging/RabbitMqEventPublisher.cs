@@ -32,11 +32,13 @@ namespace FolioForge.Infrastructure.Messaging
         private IChannel? _channel;
         private bool _queueDeclared;
 
-        private const string QueueName = "resume_processing_queue";
+        private readonly string _queueName;
 
         public RabbitMqEventPublisher(IConfiguration config, ILogger<RabbitMqEventPublisher> logger)
         {
-            _hostName = config["RabbitMq:HostName"] ?? "localhost";
+            _hostName = config["RabbitMq:HostName"]
+                ?? throw new InvalidOperationException("RabbitMq:HostName is required.");
+            _queueName = config["RabbitMq:QueueName"] ?? "resume_processing_queue";
             _logger = logger;
         }
 
@@ -49,7 +51,7 @@ namespace FolioForge.Infrastructure.Messaging
 
             // Tag with OTel Semantic Conventions for messaging
             activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingSystem, "rabbitmq");
-            activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingDestination, QueueName);
+            activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingDestination, _queueName);
             activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingOperation, "publish");
             activity?.SetTag(FolioForgeDiagnostics.Tags.EventType, typeof(T).Name);
 
@@ -72,7 +74,7 @@ namespace FolioForge.Infrastructure.Messaging
 
             await channel.BasicPublishAsync(
                 exchange: string.Empty,
-                routingKey: QueueName,
+                routingKey: _queueName,
                 mandatory: false,
                 basicProperties: props,
                 body: body);
@@ -110,7 +112,7 @@ namespace FolioForge.Infrastructure.Messaging
 
                 // Durable queue: survives broker restarts
                 await _channel.QueueDeclareAsync(
-                    queue: QueueName,
+                    queue: _queueName,
                     durable: true,
                     exclusive: false,
                     autoDelete: false,

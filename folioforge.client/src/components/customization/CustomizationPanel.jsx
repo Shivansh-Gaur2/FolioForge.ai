@@ -5,7 +5,8 @@ import { ColorPicker } from './ColorPicker';
 import { FontSelector } from './FontSelector';
 import { LayoutSelector } from './LayoutSelector';
 import { SectionManager } from './SectionManager';
-import { Palette, Type, Layout, Layers, Sparkles, Save, RotateCcw } from 'lucide-react';
+import { ContentEditor } from './ContentEditor';
+import { Palette, Type, Layout, Layers, Sparkles, Save, RotateCcw, PenLine } from 'lucide-react';
 
 const TABS = [
     { id: 'themes',   label: 'Themes',   Icon: Sparkles },
@@ -13,6 +14,7 @@ const TABS = [
     { id: 'fonts',    label: 'Fonts',    Icon: Type },
     { id: 'layout',   label: 'Layout',   Icon: Layout },
     { id: 'sections', label: 'Sections', Icon: Layers },
+    { id: 'content',  label: 'Content',  Icon: PenLine },
 ];
 
 /**
@@ -68,6 +70,7 @@ export const CustomizationPanel = ({ portfolioId }) => {
                 {activeTab === 'fonts' && <FontSelector />}
                 {activeTab === 'layout' && <LayoutSelector />}
                 {activeTab === 'sections' && <SectionManager />}
+                {activeTab === 'content' && <ContentEditor />}
             </div>
 
             {/* Footer */}

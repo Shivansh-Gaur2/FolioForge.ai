@@ -8,12 +8,13 @@ namespace FolioForge.Infrastructure.Services;
 public class OpenAiService : IAiService
 {
     private readonly string _apiKey;
-    private readonly string _model = "gpt-4o-mini"; // Cheap, fast, smart enough
+    private readonly string _model;
 
     public OpenAiService(IConfiguration configuration)
     {
         _apiKey = configuration["OpenAi:ApiKey"]
                   ?? throw new ArgumentNullException("OpenAi:ApiKey is missing");
+        _model = configuration["OpenAi:Model"] ?? "gpt-4o-mini";
     }
 
     public async Task<string> GeneratePortfolioDataAsync(string resumeText)

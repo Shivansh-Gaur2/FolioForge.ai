@@ -93,7 +93,19 @@ export const SECTION_VARIANTS = {
 };
 
 export const AVAILABLE_FONTS = [
-  'Inter', 'Poppins', 'Montserrat', 'Playfair Display', 'Space Grotesk',
-  'DM Sans', 'Nunito', 'Lato', 'Source Sans Pro', 'Roboto', 'Open Sans',
-  'Raleway', 'Ubuntu', 'Merriweather', 'Fira Code',
+  'Inter',
+  'Poppins',
+  'Montserrat',
+  'Playfair Display',
+  'Space Grotesk',
+  'DM Sans',
+  'Nunito',
+  'Lato',
+  'Source Sans Pro',
+  'Roboto',
+  'Open Sans',
+  'Raleway',
+  'Ubuntu',
+  'Merriweather',
+  'Fira Code',
 ];

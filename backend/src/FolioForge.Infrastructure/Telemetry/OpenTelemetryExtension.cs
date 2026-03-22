@@ -17,7 +17,7 @@ public static class OpenTelemetryExtension
     {
         // ── Read configuration ──
         var serviceName = configuration["OpenTelemetry:ServiceName"] ?? "FolioForge";
-        var otlpEndpoint = configuration["OpenTelemetry:OtlpEndpoint"] ?? "http://localhost:4317";
+        var otlpEndpoint = configuration["OpenTelemetry:OtlpEndpoint"];
         var successRatio = configuration.GetValue<double>("OpenTelemetry:Sampling:SuccessRatio", 1.0);
 
         services.AddOpenTelemetry()
@@ -68,18 +68,21 @@ public static class OpenTelemetryExtension
                     // connection so it doesn't interfere with the main pipeline.
                     .SetSmartSampler(
                         successRatio,
-                        errorExporter: successRatio < 1.0
+                        errorExporter: successRatio < 1.0 && otlpEndpoint != null
                             ? new OtlpTraceExporter(new OtlpExporterOptions
                               {
                                   Endpoint = new Uri(otlpEndpoint)
                               })
-                            : null)
+                            : null);
 
-                    // Export all sampled spans to Jaeger via OTLP gRPC
-                    .AddOtlpExporter(opts =>
+                    // Export spans to Jaeger/OTLP collector if endpoint is configured
+                    if (otlpEndpoint != null)
                     {
-                        opts.Endpoint = new Uri(otlpEndpoint);
-                    });
+                        tracing.AddOtlpExporter(opts =>
+                        {
+                            opts.Endpoint = new Uri(otlpEndpoint);
+                        });
+                    }
             })
 
             // ── Metrics: counters, histograms for dashboards ──

@@ -102,7 +102,7 @@ export const DashboardPage = () => {
     useEffect(() => {
         fetchPortfolios();
     }, [fetchPortfolios]);
-    
+
     useEffect(() => {
         return () => {
             if(pollingRef.current) clearInterval(pollingRef.current);
@@ -188,6 +188,15 @@ const handleUpload = async (portfolioId, file) => {
                         <span className="text-sm text-slate-400">
                             {user?.email}
                         </span>
+                        {user?.planSlug && (
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                user.planSlug === 'pro'
+                                    ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                    : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                            }`}>
+                                {user.planName ?? 'Free'}
+                            </span>
+                        )}
                         <button
                             onClick={handleLogout}
                             className="px-4 py-1.5 rounded-lg text-sm font-medium
@@ -229,6 +238,35 @@ const handleUpload = async (portfolioId, file) => {
                             <span className="text-lg">✨</span> New Portfolio
                         </button>
                     </div>
+
+                    {/* Upgrade Banner (free plan users) */}
+                    {user?.planSlug === 'free' && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="mb-6 p-4 rounded-xl border border-purple-500/30
+                                       bg-gradient-to-r from-purple-500/10 to-blue-500/10
+                                       flex items-center justify-between"
+                        >
+                            <div>
+                                <p className="text-sm font-medium text-purple-200">
+                                    You're on the Free plan — 1 portfolio, 1 AI parse/month
+                                </p>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                    Upgrade to Pro for unlimited portfolios, no watermark, custom domains & more.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => navigate('/pricing')}
+                                className="px-4 py-2 rounded-lg text-sm font-semibold shrink-0
+                                           bg-gradient-to-r from-blue-500 to-purple-500
+                                           hover:from-blue-600 hover:to-purple-600
+                                           transition-all"
+                            >
+                                Upgrade
+                            </button>
+                        </motion.div>
+                    )}
 
                     {/* Upload Status Banner */}
                     <AnimatePresence>

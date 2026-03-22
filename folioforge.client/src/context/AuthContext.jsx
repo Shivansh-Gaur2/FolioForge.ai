@@ -59,8 +59,8 @@ export const AuthProvider = ({ children }) => {
             userId: authResponse.userId,
             email: authResponse.email,
             fullName: authResponse.fullName,
-            tenantId: authResponse.tenantId,
-            tenantIdentifier: authResponse.tenantIdentifier,
+            planSlug: authResponse.planSlug ?? 'free',
+            planName: authResponse.planName ?? 'Free',
         };
         AuthService.setStoredUser(userInfo);
         setUser(userInfo);
@@ -69,8 +69,8 @@ export const AuthProvider = ({ children }) => {
     /**
      * Register a new user and auto-login.
      */
-    const register = useCallback(async ({ email, fullName, password, tenantIdentifier }) => {
-        const response = await AuthService.register({ email, fullName, password, tenantIdentifier });
+    const register = useCallback(async ({ email, fullName, password }) => {
+        const response = await AuthService.register({ email, fullName, password });
         persistAuth(response);
         return response;
     }, [persistAuth]);

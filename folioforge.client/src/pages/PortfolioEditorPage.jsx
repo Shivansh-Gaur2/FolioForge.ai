@@ -11,12 +11,30 @@ import { ContactSection } from '../features/portfolio/ContactSection';
 import { AnimatedEducationSection } from '../features/portfolio/AnimatedEducationSection';
 import { ParticleHero } from '../features/portfolio/ParticleHero';
 
+/** Parse bio text from about section content JSON */
+const parseBio = (content) => {
+    try {
+        const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+        if (typeof parsed === 'string') return parsed;
+        return parsed?.content || parsed?.bio || parsed?.summary || '';
+    } catch { return typeof content === 'string' ? content : ''; }
+};
+
 /** Map section types to the real rendered components */
 const SECTION_RENDERERS = {
+    about:    (section, portfolio) => (
+        <ParticleHero
+            key={section.id}
+            title={portfolio?.title || 'Portfolio'}
+            bio={parseBio(section.content)}
+            onContactClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
+            onDownloadClick={() => {}}
+        />
+    ),
     skills:   (section) => <AnimatedSkillsSection key={section.id} content={section.content} variant={section.variant} />,
     timeline: (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
     projects: (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
-    contact:  (section) => <ContactSection key={section.id} variant={section.variant} />,
+    contact:  (section) => <ContactSection key={section.id} content={section.content} variant={section.variant} />,
     education: (section) => <AnimatedEducationSection key={section.id} content={section.content} variant={section.variant} />,
 };
 
@@ -62,18 +80,10 @@ export const PortfolioEditorPage = () => {
         .filter(s => s.isVisible)
         .sort((a, b) => a.sortOrder - b.sortOrder);
 
-    // Separate hero/about from body sections (hero always at top)
-    const aboutSection = visibleSections.find(s => s.sectionType?.toLowerCase() === 'about');
+    // All sections flow in sortOrder (about renders as hero, hero type is hidden)
     const bodySections = visibleSections.filter(
-        s => !['hero', 'about'].includes(s.sectionType?.toLowerCase())
+        s => s.sectionType?.toLowerCase() !== 'hero'
     );
-
-    // Parse bio for hero preview
-    let bio = '';
-    try {
-        const aboutContent = aboutSection?.content;
-        if (aboutContent) bio = JSON.parse(aboutContent).content;
-    } catch { /* ignore */ }
 
     const layoutClass =
         layout === 'sidebar' ? 'flex' : 'flex flex-col';
@@ -110,28 +120,48 @@ export const PortfolioEditorPage = () => {
 
                 {/* Preview area */}
                 <div
-                    className="flex-1 overflow-auto"
+                    className="flex-1 overflow-auto portfolio-root"
                     style={{
                         backgroundColor,
                         color: textColor,
-                        fontFamily: fontBody,
                         '--color-primary': primaryColor,
+                        '--color-secondary': secondaryColor,
                         '--color-bg': backgroundColor,
                         '--color-text': textColor,
                         '--font-heading': fontHeading,
                         '--font-body': fontBody,
+                        '--font-heading-family': `"${fontHeading}"`,
+                        '--font-body-family': `"${fontBody}"`,
                     }}
                 >
-                    {/* Hero preview – always full-width at top */}
-                    <div id="hero" className="relative">
-                        <ParticleHero
-                            title={portfolio?.title || 'Portfolio'}
-                            bio={bio}
-                            onContactClick={() => document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })}
-                            onDownloadClick={() => {}}
-                        />
-                    </div>
-
+                    {/* Font styles applied via CSS custom properties */}
+                    <style>{`
+                        .portfolio-root {
+                            font-family: var(--font-body-family), ui-sans-serif, system-ui, sans-serif;
+                        }
+                        
+                        .portfolio-root .section-heading {
+                            font-family: var(--font-heading-family), ui-sans-serif, system-ui, sans-serif;
+                            color: var(--color-primary) !important;
+                        }
+                        
+                        .portfolio-root .section-badge {
+                            background: color-mix(in srgb, var(--color-primary) 15%, transparent) !important;
+                            color: var(--color-primary) !important;
+                        }
+                        
+                        .portfolio-root .section-subtitle {
+                            color: color-mix(in srgb, var(--color-text) 60%, transparent) !important;
+                        }
+                        
+                        .portfolio-root .accent-text {
+                            color: var(--color-primary) !important;
+                        }
+                        
+                        .portfolio-root .accent-bg {
+                            background-color: var(--color-primary) !important;
+                        }
+                    `}</style>
                     {/* Body sections in chosen layout */}
                     <motion.div
                         initial={{ opacity: 0 }}
@@ -188,7 +218,7 @@ export const PortfolioEditorPage = () => {
                                     if (renderer) {
                                         return (
                                             <div key={section.id} id={`section-${section.id}`}>
-                                                {renderer(section)}
+                                                {renderer(section, portfolio)}
                                             </div>
                                         );
                                     }

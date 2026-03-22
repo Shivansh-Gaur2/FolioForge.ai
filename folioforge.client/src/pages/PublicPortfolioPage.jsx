@@ -1,30 +1,37 @@
-import { useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { usePortfolio } from '../hooks/usePortfolio';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
+import { PortfolioService } from '../services/portfolioService';
 import { AsyncStateHandler } from '../components/AsyncStateHandler';
-import { FloatingNav } from '../components/layout/FloatingNav';
+
+// Re-use the same PortfolioContent component (it's the same visual output)
+// We lazy-import the PortfolioPage module to access PortfolioContent indirectly.
+// Since PortfolioPage exports a named component that wraps PortfolioContent,
+// we replicate the same data-fetching pattern here with the public API.
+
+// Import all the section renderers and components used by PortfolioPage
+import { motion } from 'framer-motion';
+import { useMemo } from 'react';
 import { ParticleHero } from '../features/portfolio/ParticleHero';
 import { AnimatedSkillsSection } from '../features/portfolio/AnimatedSkillsSection';
 import { AnimatedTimelineSection } from '../features/portfolio/AnimatedTimelineSection';
 import { AnimatedProjectsSection } from '../features/portfolio/AnimatedProjectsSection';
-import { AnimatedEducationSection } from '../features/portfolio/AnimatedEducationSection';
 import { ContactSection } from '../features/portfolio/ContactSection';
+import { AnimatedEducationSection } from '../features/portfolio/AnimatedEducationSection';
+import { FloatingNav } from '../components/layout/FloatingNav';
 
-/** Parse bio text from about section content JSON */
+/** Parse bio text from section content */
 const parseBio = (content) => {
+    if (!content) return '';
     try {
         const parsed = typeof content === 'string' ? JSON.parse(content) : content;
-        if (typeof parsed === 'string') return parsed;
-        return parsed?.content || parsed?.bio || parsed?.summary || '';
-    } catch { return typeof content === 'string' ? content : ''; }
+        return parsed.content || parsed.bio || parsed.summary || parsed.text || '';
+    } catch {
+        return typeof content === 'string' ? content : '';
+    }
 };
 
-/**
- * Maps sectionType (case-insensitive) to the component that renders it.
- * About renders as the full-screen hero with particles + bio.
- */
 const SECTION_RENDERERS = {
-    about:     (section, portfolio) => (
+    about: (section, portfolio) => (
         <ParticleHero
             key={section.id}
             title={portfolio?.title || 'Portfolio'}
@@ -33,37 +40,32 @@ const SECTION_RENDERERS = {
             onDownloadClick={() => {}}
         />
     ),
-    skills:    (section) => <AnimatedSkillsSection key={section.id} content={section.content} variant={section.variant} />,
-    timeline:  (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
-    projects:  (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
-    contact:   (section) => <ContactSection key={section.id} content={section.content} variant={section.variant} />,
+    skills: (section) => <AnimatedSkillsSection key={section.id} content={section.content} variant={section.variant} />,
+    timeline: (section) => <AnimatedTimelineSection key={section.id} content={section.content} variant={section.variant} />,
+    projects: (section) => <AnimatedProjectsSection key={section.id} content={section.content} variant={section.variant} />,
+    contact: (section) => <ContactSection key={section.id} content={section.content} variant={section.variant} />,
     education: (section) => <AnimatedEducationSection key={section.id} content={section.content} variant={section.variant} />,
 };
 
-/** Section-type icons used for sidebar navigation */
 const SECTION_ICONS = {
     skills: '⚡', timeline: '💼', projects: '🚀', contact: '✉️',
-    education: '🎓', about: '👤', hero: '🏠', markdown: '📝',
+    education: '🎓', about: '👤', hero: '🏠',
 };
 
 /**
- * PortfolioContent Component
- * Renders the portfolio with full animations,
- * respecting theme customization (layout, colours, fonts)
- * and section ordering / visibility from the API.
+ * PublicPortfolioContent — renders a public portfolio with full styling.
+ * Identical to PortfolioContent in PortfolioPage.jsx but used for the public route.
  */
-const PortfolioContent = ({ portfolio }) => {
-    // Theme customization
+const PublicPortfolioContent = ({ portfolio }) => {
     const theme = portfolio.theme || {};
-    const primaryColor   = theme.primaryColor   || '#3B82F6';
+    const primaryColor = theme.primaryColor || '#3B82F6';
     const secondaryColor = theme.secondaryColor || '#10B981';
     const backgroundColor = theme.backgroundColor || '#FFFFFF';
-    const textColor      = theme.textColor      || '#1F2937';
-    const fontHeading    = theme.fontHeading     || 'Inter';
-    const fontBody       = theme.fontBody        || 'Inter';
-    const layout         = theme.layout          || 'single-column';
+    const textColor = theme.textColor || '#1F2937';
+    const fontHeading = theme.fontHeading || 'Inter';
+    const fontBody = theme.fontBody || 'Inter';
+    const layout = theme.layout || 'single-column';
 
-    // ── Resolve ordered, visible sections ──────────────────────
     const visibleSections = useMemo(() =>
         (portfolio.sections || [])
             .filter(s => s.isVisible !== false)
@@ -71,12 +73,10 @@ const PortfolioContent = ({ portfolio }) => {
         [portfolio.sections]
     );
 
-    // All sections flow in sortOrder (about renders as hero, hero type is hidden)
     const bodySections = visibleSections.filter(
         s => s.sectionType?.toLowerCase() !== 'hero'
     );
 
-    // Build dynamic nav items from visible sections for FloatingNav
     const hasContactSection = bodySections.some(
         s => s.sectionType?.toLowerCase() === 'contact'
     );
@@ -97,7 +97,6 @@ const PortfolioContent = ({ portfolio }) => {
         return items;
     }, [bodySections]);
 
-    // ── Render a single section by its type ────────────────────
     const renderSection = (section, portfolioData) => {
         const type = section.sectionType?.toLowerCase();
         const renderer = SECTION_RENDERERS[type];
@@ -109,9 +108,7 @@ const PortfolioContent = ({ portfolio }) => {
         );
     };
 
-    // ── Layout class for the body sections wrapper ─────────────
-    const layoutClass =
-        layout === 'sidebar' ? 'flex' : 'flex flex-col';
+    const layoutClass = layout === 'sidebar' ? 'flex' : 'flex flex-col';
 
     return (
         <motion.div
@@ -131,12 +128,10 @@ const PortfolioContent = ({ portfolio }) => {
                 '--font-body-family': `"${fontBody}"`,
             }}
         >
-            {/* Inject themed utility classes that override Tailwind defaults */}
             <style>{`
                 .portfolio-root {
                     font-family: var(--font-body-family), ui-sans-serif, system-ui, sans-serif;
                 }
-                
                 .portfolio-root .section-heading {
                     font-family: var(--font-heading-family), ui-sans-serif, system-ui, sans-serif;
                     color: var(--color-primary) !important;
@@ -155,12 +150,10 @@ const PortfolioContent = ({ portfolio }) => {
                     background-color: var(--color-primary) !important;
                 }
             `}</style>
-            {/* Floating Navigation – dynamic items */}
+
             <FloatingNav items={navItems} />
 
-            {/* Body sections – rendered in sortOrder, respecting chosen layout */}
             <div className={layoutClass}>
-                {/* Sidebar layout: persistent side-nav */}
                 {layout === 'sidebar' && (
                     <aside
                         className="hidden md:flex w-56 min-h-full flex-col flex-shrink-0 sticky top-0 self-start p-6"
@@ -190,7 +183,6 @@ const PortfolioContent = ({ portfolio }) => {
                     </aside>
                 )}
 
-                {/* Main content area */}
                 <main className="flex-1 min-w-0">
                     {bodySections.map(s => renderSection(s, portfolio))}
                     {!hasContactSection && (
@@ -201,7 +193,7 @@ const PortfolioContent = ({ portfolio }) => {
                 </main>
             </div>
 
-            {/* Footer */}
+            {/* Footer with FolioForge watermark */}
             <footer className="relative py-12 text-center bg-slate-900 dark:bg-black text-white">
                 <div className="max-w-5xl mx-auto px-6">
                     <motion.div
@@ -210,8 +202,11 @@ const PortfolioContent = ({ portfolio }) => {
                         className="mb-6"
                     >
                         <h3
-                            className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400"
-                            style={{ fontFamily: `var(--font-heading), ui-sans-serif, system-ui, sans-serif`, backgroundImage: `linear-gradient(to right, ${primaryColor}, ${secondaryColor})` }}
+                            className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r"
+                            style={{
+                                fontFamily: `var(--font-heading), ui-sans-serif, system-ui, sans-serif`,
+                                backgroundImage: `linear-gradient(to right, ${primaryColor}, ${secondaryColor})`,
+                            }}
                         >
                             {portfolio.title}
                         </h3>
@@ -219,9 +214,18 @@ const PortfolioContent = ({ portfolio }) => {
                     <p className="text-slate-400 text-sm">
                         &copy; {new Date().getFullYear()} All rights reserved.
                     </p>
-                    <p className="text-slate-500 text-xs mt-2">
-                        Crafted with ❤️ using FolioForge AI
-                    </p>
+                    {/* FolioForge watermark — hidden for Pro users */}
+                    {portfolio.showWatermark !== false && (
+                        <a
+                            href="https://folioforge.ai"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 mt-4 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all text-xs"
+                        >
+                            <span>⚡</span>
+                            <span>Built with <strong className="text-white">FolioForge</strong></span>
+                        </a>
+                    )}
                 </div>
             </footer>
         </motion.div>
@@ -229,24 +233,43 @@ const PortfolioContent = ({ portfolio }) => {
 };
 
 /**
- * PortfolioPage - Main page component
- *
- * Pattern: Container component that handles data fetching,
- * delegates rendering to presentational components.
+ * PublicPortfolioPage — fetches and renders a portfolio by slug (no auth).
+ * Route: /p/:slug
  */
-export const PortfolioPage = ({ id }) => {
-    const { portfolio, loading, error, retry } = usePortfolio(id);
+export const PublicPortfolioPage = () => {
+    const { slug } = useParams();
+    const [portfolio, setPortfolio] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const fetchPortfolio = useCallback(async () => {
+        if (!slug) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await PortfolioService.getPublicBySlug(slug);
+            setPortfolio(data);
+        } catch (err) {
+            setError(err);
+        } finally {
+            setLoading(false);
+        }
+    }, [slug]);
+
+    useEffect(() => {
+        fetchPortfolio();
+    }, [fetchPortfolio]);
 
     return (
         <AsyncStateHandler
             loading={loading}
             error={error}
             data={portfolio}
-            onRetry={retry}
+            onRetry={fetchPortfolio}
             loadingMessage="Loading portfolio..."
-            emptyMessage="Portfolio not found"
+            emptyMessage="Portfolio not found or is not published."
         >
-            {(data) => <PortfolioContent portfolio={data} />}
+            {(data) => <PublicPortfolioContent portfolio={data} />}
         </AsyncStateHandler>
     );
 };

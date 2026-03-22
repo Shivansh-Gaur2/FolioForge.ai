@@ -12,12 +12,16 @@ public class GroqAiService : IAiService
 {
     private readonly HttpClient _httpClient;
     private readonly string _apiKey;
+    private readonly string _model;
+    private readonly string _endpoint;
     private readonly ILogger<GroqAiService> _logger;
 
     public GroqAiService(HttpClient httpClient, IConfiguration config, ILogger<GroqAiService> logger)
     {
         _httpClient = httpClient;
         _apiKey = config["Groq:ApiKey"] ?? throw new InvalidOperationException("Groq:ApiKey configuration is missing");
+        _model = config["Groq:Model"] ?? "llama-3.3-70b-versatile";
+        _endpoint = config["Groq:Endpoint"] ?? "https://api.groq.com/openai/v1/chat/completions";
         _logger = logger;
     }
 
@@ -27,14 +31,12 @@ public class GroqAiService : IAiService
         using var activity = FolioForgeDiagnostics.ActivitySource.StartActivity(
             FolioForgeDiagnostics.GeneratePortfolio,
             ActivityKind.Internal);
-        activity?.SetTag("ai.model", "llama-3.3-70b-versatile");
+        activity?.SetTag("ai.model", _model);
         activity?.SetTag("prompt.length", resumeText.Length);
-
-        var url = "https://api.groq.com/openai/v1/chat/completions";
 
         var requestBody = new
         {
-            model = "llama-3.3-70b-versatile",
+            model = _model,
             messages = new[]
             {
                 new
@@ -58,7 +60,7 @@ public class GroqAiService : IAiService
 
         // Use per-request headers instead of mutating the shared HttpClient.DefaultRequestHeaders
         // DefaultRequestHeaders is NOT thread-safe — concurrent requests would corrupt headers.
-        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
         {
             Content = jsonContent
         };
@@ -96,6 +98,11 @@ public class GroqAiService : IAiService
         2. Extract distinct achievements/responsibilities as a LIST of strings called 'points'.
         3. If the resume has bullet points, preserve them. If it has paragraphs, split them into logical bullet points.
         4. Keep descriptions professional, concise, and impact-oriented.
+        5. Extract ALL URLs/links found in the resume (GitHub, LinkedIn, portfolio, project demos, etc.).
+        6. For projects, extract any associated URL (GitHub repo, live demo, etc.) into the 'url' field.
+        7. For experience, extract the duration/period (e.g. 'Jan 2023 - Present') into the 'duration' field.
+        8. Extract education details if present.
+        9. If no URL is found for a field, use an empty string.
 
         REQUIRED JSON STRUCTURE:
         {{
@@ -104,7 +111,8 @@ public class GroqAiService : IAiService
           ""experience"": [ 
             {{ 
               ""company"": ""Company Name"", 
-              ""role"": ""Job Title"", 
+              ""role"": ""Job Title"",
+              ""duration"": ""Jan 2023 - Present"",
               ""points"": [
                 ""Designed microservices architecture using .NET 8."",
                 ""Reduced API latency by 40% via Redis caching.""
@@ -114,13 +122,29 @@ public class GroqAiService : IAiService
           ""projects"": [ 
             {{ 
               ""name"": ""Project Name"", 
-              ""techStack"": ""React, Node.js"", 
+              ""techStack"": ""React, Node.js"",
+              ""url"": ""https://github.com/user/project"",
               ""points"": [
                 ""Built a real-time chat application using SignalR."",
                 ""Implemented OAuth2 authentication for secure login.""
               ] 
             }} 
-          ]
+          ],
+          ""education"": [
+            {{
+              ""degree"": ""B.Tech in Computer Science"",
+              ""institution"": ""University Name"",
+              ""year"": ""2020 - 2024"",
+              ""gpa"": ""3.8/4.0""
+            }}
+          ],
+          ""links"": {{
+            ""github"": ""https://github.com/username"",
+            ""linkedin"": ""https://linkedin.com/in/username"",
+            ""portfolio"": ""https://example.com"",
+            ""email"": ""user@example.com"",
+            ""twitter"": """"
+          }}
         }}
 
         RESUME TEXT:

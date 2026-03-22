@@ -3,8 +3,10 @@ using FolioForge.Application.Commands.CreatePortfolio;
 using FolioForge.Application.Commands.DeletePortfolio;
 using FolioForge.Application.Commands.UpdateCustomization;
 using FolioForge.Application.Common.Events;
+using FolioForge.Application.Common.Interfaces;
 using FolioForge.Application.Portfolios.Queries;
 using FolioForge.Domain.Interfaces;
+using FolioForge.Infrastructure.Persistence;
 using FolioForge.Infrastructure.RateLimiting;
 using FolioForge.Infrastructure.Resilience.Bulkhead;
 using MediatR;
@@ -15,11 +17,6 @@ using System.IdentityModel.Tokens.Jwt;
 
 namespace FolioForge.Api.Controllers
 {
-    /// <summary>
-    /// Portfolio CRUD endpoints.
-    /// Uses "Default" policy (20 burst, 10/s sustained) for most operations.
-    /// Upload endpoint overrides with "Upload" policy (stricter).
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -27,11 +24,22 @@ namespace FolioForge.Api.Controllers
     {
         private readonly ISender _mediator;
         private readonly IEventPublisher _publisher;
+        private readonly IPortfolioRepository _repository;
+        private readonly IUserRepository _userRepository;
+        private readonly IPlanRepository _planRepository;
 
-        public PortfoliosController(ISender mediator, IEventPublisher publisher)
+        public PortfoliosController(
+            ISender mediator,
+            IEventPublisher publisher,
+            IPortfolioRepository repository,
+            IUserRepository userRepository,
+            IPlanRepository planRepository)
         {
             _mediator = mediator;
             _publisher = publisher;
+            _repository = repository;
+            _userRepository = userRepository;
+            _planRepository = planRepository;
         }
 
         /// <summary>
@@ -48,6 +56,23 @@ namespace FolioForge.Api.Controllers
         public async Task<IActionResult> Create([FromBody] CreatePortfolioRequest request)
         {
             var userId = GetUserId();
+
+            // ── Plan limit: max portfolios ──
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user != null)
+            {
+                var plan = await _planRepository.GetByIdAsync(user.PlanId);
+                if (plan != null)
+                {
+                    var existing = await _mediator.Send(new GetPortfoliosByUserQuery(userId, 1, 1));
+                    if (existing.TotalCount >= plan.MaxPortfolios)
+                        return StatusCode(403, new
+                        {
+                            error = $"Your {plan.Name} plan allows {plan.MaxPortfolios} portfolio(s). Upgrade to create more.",
+                            code = "PLAN_LIMIT_PORTFOLIOS"
+                        });
+                }
+            }
 
             var command = new CreatePortfolioCommand(userId, request.Title, request.Slug);
 
@@ -118,6 +143,23 @@ namespace FolioForge.Api.Controllers
         [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB hard limit at Kestrel level
         public async Task<IActionResult> UploadResume(Guid id, IFormFile file)
         {
+            // ── Plan limit: AI parses ──
+            var userId = GetUserId();
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user != null)
+            {
+                var plan = await _planRepository.GetByIdAsync(user.PlanId);
+                if (plan != null && user.AiParsesUsedThisMonth >= plan.MaxAiParsesPerMonth)
+                    return StatusCode(403, new
+                    {
+                        error = $"You've used all {plan.MaxAiParsesPerMonth} AI parse(s) this month. Upgrade for more.",
+                        code = "PLAN_LIMIT_AI_PARSES"
+                    });
+
+                user.IncrementAiParses();
+                await _userRepository.SaveChangesAsync();
+            }
+
             if (file == null || file.Length == 0)
                 return BadRequest(new { error = "No file uploaded." });
 
@@ -171,7 +213,7 @@ namespace FolioForge.Api.Controllers
                 request.FontBody,
                 request.Layout,
                 request.Sections.Select(s => new SectionCustomization(
-                    s.SectionId, s.SortOrder, s.IsVisible, s.Variant
+                    s.SectionId, s.SortOrder, s.IsVisible, s.Variant, s.Content
                 )).ToList()
             );
 
@@ -179,6 +221,40 @@ namespace FolioForge.Api.Controllers
             if (!result) return NotFound();
 
             return NoContent();
+        }
+
+        /// <summary>
+        /// Publish a portfolio so it's publicly viewable at /api/p/{slug}.
+        /// POST /api/portfolios/{id}/publish
+        /// </summary>
+        [HttpPost("{id:guid}/publish")]
+        public async Task<IActionResult> Publish(Guid id)
+        {
+            var portfolio = await _repository.GetByIdAsync(id);
+            if (portfolio == null || portfolio.UserId != GetUserId())
+                return NotFound();
+
+            portfolio.Publish();
+            await _repository.SaveChangesAsync();
+
+            return Ok(new { message = "Portfolio published.", slug = portfolio.Slug });
+        }
+
+        /// <summary>
+        /// Unpublish a portfolio (make it private again).
+        /// POST /api/portfolios/{id}/unpublish
+        /// </summary>
+        [HttpPost("{id:guid}/unpublish")]
+        public async Task<IActionResult> Unpublish(Guid id)
+        {
+            var portfolio = await _repository.GetByIdAsync(id);
+            if (portfolio == null || portfolio.UserId != GetUserId())
+                return NotFound();
+
+            portfolio.Unpublish();
+            await _repository.SaveChangesAsync();
+
+            return Ok(new { message = "Portfolio unpublished." });
         }
     }
 }

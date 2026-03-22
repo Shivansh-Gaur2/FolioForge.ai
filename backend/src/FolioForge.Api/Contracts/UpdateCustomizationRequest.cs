@@ -42,4 +42,11 @@ public class SectionCustomizationItem
 
     [Required, StringLength(50)]
     public string Variant { get; set; } = "default";
+
+    /// <summary>
+    /// Optional raw JSON content for the section.
+    /// When present the section body is replaced with this value.
+    /// Null means "leave content unchanged".
+    /// </summary>
+    public string? Content { get; set; }
 }

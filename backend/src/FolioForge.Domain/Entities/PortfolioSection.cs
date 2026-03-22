@@ -50,6 +50,18 @@ namespace FolioForge.Domain.Entities
             Content = JsonSerializer.Serialize(newData);
         }
 
+        /// <summary>
+        /// Directly stores a pre-serialised JSON string (e.g. from a client PUT payload).
+        /// Validates that the string is well-formed JSON before storing.
+        /// </summary>
+        /// <exception cref="JsonException">Thrown when <paramref name="jsonContent"/> is not valid JSON.</exception>
+        public void UpdateContentRaw(string jsonContent)
+        {
+            // Parse-and-discard validates the JSON — throws JsonException on bad input
+            using var _ = JsonDocument.Parse(jsonContent);
+            Content = jsonContent;
+        }
+
         // Helper method to deserialize content to a specific type
         public T? GetContent<T>()
         {

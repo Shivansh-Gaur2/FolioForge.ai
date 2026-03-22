@@ -31,6 +31,7 @@ namespace FolioForge.Api.Controllers
     {
         private readonly IUserRepository _userRepository;
         private readonly ITenantRepository _tenantRepository;
+        private readonly IPlanRepository _planRepository;
         private readonly IAuthService _authService;
         private readonly ApplicationDbContext _dbContext;
         private readonly IConfiguration _configuration;
@@ -38,12 +39,14 @@ namespace FolioForge.Api.Controllers
         public AuthController(
             IUserRepository userRepository,
             ITenantRepository tenantRepository,
+            IPlanRepository planRepository,
             IAuthService authService,
             ApplicationDbContext dbContext,
             IConfiguration configuration)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
+            _planRepository = planRepository;
             _authService = authService;
             _dbContext = dbContext;
             _configuration = configuration;
@@ -53,24 +56,22 @@ namespace FolioForge.Api.Controllers
             int.Parse(_configuration["Jwt:RefreshTokenExpirationDays"] ?? "7");
 
         /// <summary>
-        /// Register a new user under a specific tenant.
+        /// Register a new user (auto-assigned to default tenant).
         /// Returns short-lived access token + long-lived refresh token.
         /// </summary>
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequest request)
         {
-            var tenant = await _tenantRepository.GetByIdentifierAsync(request.TenantIdentifier);
-            if (tenant == null)
-                return BadRequest(new { error = $"Tenant '{request.TenantIdentifier}' not found." });
-
-            if (!tenant.IsActive)
-                return BadRequest(new { error = "Tenant is deactivated." });
-
             if (await _userRepository.EmailExistsGloballyAsync(request.Email))
                 return Conflict(new { error = "An account with this email already exists." });
 
+            var tenant = await _tenantRepository.GetByIdAsync(ApplicationDbContext.DefaultTenantId);
+            if (tenant == null)
+                return StatusCode(500, new { error = "System configuration error. Default tenant not found." });
+
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
             var user = new User(request.Email, request.FullName, passwordHash, tenant.Id);
+            user.SetPlan(ApplicationDbContext.FreePlanId);
 
             await _userRepository.AddAsync(user);
             await _userRepository.SaveChangesAsync();
@@ -84,8 +85,8 @@ namespace FolioForge.Api.Controllers
                 UserId = user.Id,
                 Email = user.Email,
                 FullName = user.FullName,
-                TenantId = tenant.Id,
-                TenantIdentifier = tenant.Identifier
+                PlanSlug = "free",
+                PlanName = "Free",
             });
         }
 
@@ -104,10 +105,12 @@ namespace FolioForge.Api.Controllers
                 return Unauthorized(new { error = "Invalid email or password." });
 
             var tenant = await _tenantRepository.GetByIdAsync(user.TenantId);
-            if (tenant == null || !tenant.IsActive)
-                return Unauthorized(new { error = "Your tenant is no longer active." });
+            if (tenant == null)
+                return Unauthorized(new { error = "Account configuration error." });
 
             var (accessToken, refreshToken) = await CreateTokenPairAsync(user, tenant);
+
+            var plan = await _planRepository.GetByIdAsync(user.PlanId);
 
             return Ok(new AuthResponse
             {
@@ -116,8 +119,8 @@ namespace FolioForge.Api.Controllers
                 UserId = user.Id,
                 Email = user.Email,
                 FullName = user.FullName,
-                TenantId = tenant.Id,
-                TenantIdentifier = tenant.Identifier
+                PlanSlug = plan?.Slug ?? "free",
+                PlanName = plan?.Name ?? "Free",
             });
         }
 
@@ -181,6 +184,8 @@ namespace FolioForge.Api.Controllers
             var newAccessToken = _authService.GenerateAccessToken(
                 user.Id, tenant.Id, user.Email, user.FullName);
 
+            var refreshPlan = await _planRepository.GetByIdAsync(user.PlanId);
+
             return Ok(new AuthResponse
             {
                 AccessToken = newAccessToken,
@@ -188,8 +193,8 @@ namespace FolioForge.Api.Controllers
                 UserId = user.Id,
                 Email = user.Email,
                 FullName = user.FullName,
-                TenantId = tenant.Id,
-                TenantIdentifier = tenant.Identifier
+                PlanSlug = refreshPlan?.Slug ?? "free",
+                PlanName = refreshPlan?.Name ?? "Free",
             });
         }
 
@@ -219,16 +224,26 @@ namespace FolioForge.Api.Controllers
         /// </summary>
         [HttpGet("me")]
         [Microsoft.AspNetCore.Authorization.Authorize]
-        public IActionResult Me()
+        public async Task<IActionResult> Me()
         {
             var userId = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
                       ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var email = User.FindFirst(JwtRegisteredClaimNames.Email)?.Value
                      ?? User.FindFirst(ClaimTypes.Email)?.Value;
             var fullName = User.FindFirst("fullName")?.Value;
-            var tenantId = User.FindFirst("tenantId")?.Value;
 
-            return Ok(new { userId, email, fullName, tenantId });
+            Guid.TryParse(userId, out var uid);
+            var user = await _userRepository.GetByIdAsync(uid);
+            var plan = user != null ? await _planRepository.GetByIdAsync(user.PlanId) : null;
+
+            return Ok(new
+            {
+                userId,
+                email,
+                fullName,
+                planSlug = plan?.Slug ?? "free",
+                planName = plan?.Name ?? "Free",
+            });
         }
 
         // ─────────────────────────────────────────────────────────
@@ -269,8 +284,7 @@ namespace FolioForge.Api.Controllers
     public record RegisterRequest(
         [Required, EmailAddress, StringLength(254)] string Email,
         [Required, StringLength(100, MinimumLength = 2)] string FullName,
-        [Required, MinLength(8, ErrorMessage = "Password must be at least 8 characters.")] string Password,
-        [Required, StringLength(50)] string TenantIdentifier
+        [Required, MinLength(8, ErrorMessage = "Password must be at least 8 characters.")] string Password
     );
 
     public record LoginRequest(
@@ -294,7 +308,7 @@ namespace FolioForge.Api.Controllers
         public Guid UserId { get; set; }
         public string Email { get; set; } = default!;
         public string FullName { get; set; } = default!;
-        public Guid TenantId { get; set; }
-        public string TenantIdentifier { get; set; } = default!;
+        public string PlanSlug { get; set; } = "free";
+        public string PlanName { get; set; } = "Free";
     }
 }

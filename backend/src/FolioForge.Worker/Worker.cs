@@ -18,6 +18,7 @@ public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly string _rabbitHost;
+    private readonly string _queueName;
     private IConnection? _connection;
     private IChannel? _channel;
     // My database is supposed to be scoped , so I need to create a scope to resolve it inside the worker
@@ -28,7 +29,9 @@ public class Worker : BackgroundService
     {
         _logger = logger;
         _scopeFactory = scopeFactory;
-        _rabbitHost = configuration["RabbitMq:HostName"] ?? "localhost";
+        _rabbitHost = configuration["RabbitMq:HostName"]
+            ?? throw new InvalidOperationException("RabbitMq:HostName is required.");
+        _queueName = configuration["RabbitMq:QueueName"] ?? "resume_processing_queue";
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken)
@@ -38,7 +41,7 @@ public class Worker : BackgroundService
         _channel = await _connection.CreateChannelAsync();
 
         // Durable queue to match the publisher — messages survive broker restarts
-        await _channel.QueueDeclareAsync(queue: "resume_processing_queue", durable: true, exclusive: false, autoDelete: false, arguments: null);
+        await _channel.QueueDeclareAsync(queue: _queueName, durable: true, exclusive: false, autoDelete: false, arguments: null);
 
         // Prefetch 1: only deliver one unacked message at a time.
         // This prevents the worker from being overwhelmed and ensures fair distribution.
@@ -67,13 +70,13 @@ public class Worker : BackgroundService
                 parentContext: parentContext.ActivityContext);
 
             activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingSystem, "rabbitmq");
-            activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingDestination, "resume_processing_queue");
+            activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingDestination, _queueName);
             activity?.SetTag(FolioForgeDiagnostics.Tags.MessagingOperation, "process");
 
             var body = ea.Body.ToArray();
             var message = Encoding.UTF8.GetString(body);
 
-            _logger.LogInformation("Received message from {Queue}", "resume_processing_queue");
+            _logger.LogInformation("Received message from {Queue}", _queueName);
 
             try
             {
@@ -123,7 +126,7 @@ public class Worker : BackgroundService
                 activity?.SetTag("error", true);
 
                 _logger.LogError(ex, "Error processing message for queue {Queue}",
-                    "resume_processing_queue");
+                    _queueName);
 
                 // ★ NACK with requeue=false: send to dead-letter (or discard) so we don't
                 // get stuck in an infinite retry loop on poison messages.
@@ -131,7 +134,7 @@ public class Worker : BackgroundService
             }
         };
         // ★ autoAck: false — we manually ack/nack after processing
-        await _channel.BasicConsumeAsync(queue: "resume_processing_queue", autoAck: false, consumer: consumer);
+        await _channel.BasicConsumeAsync(queue: _queueName, autoAck: false, consumer: consumer);
 
         // Keep the service alive
         while (!stoppingToken.IsCancellationRequested)
@@ -174,7 +177,7 @@ public class Worker : BackgroundService
                 {
                     // 2. Fetch and delete only AI-managed sections.
                     // Keep user-managed sections (e.g., Contact) intact.
-                    var aiManagedSectionTypes = new[] { "About", "Skills", "Timeline", "Projects" };
+                    var aiManagedSectionTypes = new[] { "About", "Skills", "Timeline", "Projects", "Education", "Contact", "Markdown" };
                     var existingSections = await dbContext.Sections
                                                 .Where(s => s.PortfolioId == portfolioId && aiManagedSectionTypes.Contains(s.SectionType))
                                                 .ToListAsync();
@@ -201,7 +204,13 @@ public class Worker : BackgroundService
                             { PortfolioId = portfolioId },
 
                         new PortfolioSection("Projects", 4, JsonSerializer.Serialize(new { items = data.Projects }))
-                            { PortfolioId = portfolioId }
+                            { PortfolioId = portfolioId },
+
+                        new PortfolioSection("Education", 5, JsonSerializer.Serialize(new { items = data.Education }))
+                            { PortfolioId = portfolioId },
+
+                        new PortfolioSection("Contact", 6, JsonSerializer.Serialize(new { links = data.Links }))
+                            { PortfolioId = portfolioId },
                     };
 
                     await dbContext.Sections.AddRangeAsync(newSections);
@@ -271,13 +280,15 @@ public class AiResultDto
     public List<string> Skills { get; set; } = new();
     public List<ExperienceDto> Experience { get; set; } = new();
     public List<ProjectDto> Projects { get; set; } = new();
+    public List<EducationDto> Education { get; set; } = new();
+    public LinksDto Links { get; set; } = new();
 }
 
 public class ExperienceDto
 {
     public string Company { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
-    // Changed from 'Description' to 'Points' for structured bullet points
+    public string Duration { get; set; } = string.Empty;
     public List<string> Points { get; set; } = new();
 }
 
@@ -285,6 +296,23 @@ public class ProjectDto
 {
     public string Name { get; set; } = string.Empty;
     public string TechStack { get; set; } = string.Empty;
-    // Changed from 'Description' to 'Points' for structured bullet points
+    public string Url { get; set; } = string.Empty;
     public List<string> Points { get; set; } = new();
+}
+
+public class EducationDto
+{
+    public string Degree { get; set; } = string.Empty;
+    public string Institution { get; set; } = string.Empty;
+    public string Year { get; set; } = string.Empty;
+    public string Gpa { get; set; } = string.Empty;
+}
+
+public class LinksDto
+{
+    public string Github { get; set; } = string.Empty;
+    public string Linkedin { get; set; } = string.Empty;
+    public string Portfolio { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Twitter { get; set; } = string.Empty;
 }

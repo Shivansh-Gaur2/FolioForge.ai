@@ -24,11 +24,13 @@ public record UpdateCustomizationCommand(
 ) : IRequest<bool>;
 
 /// <summary>
-/// Lightweight DTO for section-level customization (no content change).
+/// Lightweight DTO for section-level customization.
+/// <c>Content</c> is optional: null means "leave the existing content unchanged".
 /// </summary>
 public record SectionCustomization(
     Guid SectionId,
     int SortOrder,
     bool IsVisible,
-    string Variant
+    string Variant,
+    string? Content = null
 );

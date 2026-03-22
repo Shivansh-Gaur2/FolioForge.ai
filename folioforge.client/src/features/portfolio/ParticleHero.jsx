@@ -232,6 +232,7 @@ export const ParticleHero = ({ title, bio, onContactClick, onDownloadClick }) =>
                 </motion.div>
 
                 {/* Bio */}
+                {bio && (
                 <motion.p
                     variants={itemVariants}
                     className="mt-8 text-base md:text-lg text-slate-500 dark:text-slate-400 
@@ -239,6 +240,7 @@ export const ParticleHero = ({ title, bio, onContactClick, onDownloadClick }) =>
                 >
                     {bio}
                 </motion.p>
+                )}
 
                 {/* CTA Buttons */}
                 <motion.div
